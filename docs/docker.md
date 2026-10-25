@@ -22,11 +22,14 @@ docker compose up -d
 - Logs: `docker compose logs -f` · Status: `docker compose ps` shows `healthy`/`unhealthy`
 - Update: `docker compose pull && docker compose up -d` · Build locally: `docker compose up -d --build`
 - Docker restarts a crashed container (`restart: unless-stopped`), but not an unhealthy one.
+- `compose.yaml` runs the container hardened: read-only root filesystem (only `./data` and a small `/tmp` tmpfs are writable), all Linux capabilities dropped, no privilege escalation, and memory/CPU/PID limits. The image already runs as a non-root user.
 
 ## Without Compose
 
 ```sh
 docker run -d --name shop-notify --restart unless-stopped \
+  --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges \
+  --memory 256m --cpus 0.5 --pids-limit 128 \
   --env-file .env -v "$PWD/data:/data" ghcr.io/spielkind/shop-notify:latest
 ```
 
