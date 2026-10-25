@@ -9,7 +9,7 @@ POST /_add_reserved                               → publish a "Reserved listin
 POST /_hide_once                                  → leave out the oldest listing once
 POST /_hide_for/<seconds>                         → leave out the oldest listing for a while;
                                                     it comes back 1.00 more expensive
-POST /_sell_out_for/<seconds>                     → the oldest listing is sold out for a while,
+POST /_sell_out_for/<seconds>                     → the newest listing is sold out for a while,
                                                     then restocked with a single item
 POST /_fail_batch_for/<seconds>                   → make listings/batch return 500 for a while
                                                     (the listing-state lookup fails)
@@ -34,6 +34,7 @@ state: dict[str, float] = {
     "hide_once": 0,
     "hidden_until": 0,
     "sold_out_until": 0,
+    "sold_out_id": 0,
     "fail_batch_until": 0,
 }
 
@@ -57,11 +58,11 @@ def add_listing(title: str | None = None) -> dict[str, object]:
 
 def listing_state(item: dict[str, object]) -> str:
     """The state Etsy reports for a single listing."""
-    if item is not listings[-1]:
-        return "active"
-    if time.time() < state["sold_out_until"]:
+    if item["listing_id"] == state["sold_out_id"] and time.time() < state["sold_out_until"]:
         return "sold_out"
-    return "inactive" if time.time() < state["hidden_until"] else "active"
+    if item is listings[-1] and time.time() < state["hidden_until"]:
+        return "inactive"
+    return "active"
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -90,14 +91,16 @@ class Handler(BaseHTTPRequestHandler):
             shops = [{"shop_id": SHOP_ID, "shop_name": SHOP_NAME}] if found else []
             self._json({"count": len(shops), "results": shops})
         elif url.path == f"/v3/application/shops/{SHOP_ID}/listings/active":
-            # like a gap in Etsy's listing index: the listing is missing everywhere
-            hidden = (
-                state["hide_once"]
-                or time.time() < state["hidden_until"]
-                or time.time() < state["sold_out_until"]
-            )
-            visible = listings[:-1] if hidden else listings
+            # like a gap in Etsy's listing index: a missing listing is gone everywhere
+            oldest_hidden = state["hide_once"] or time.time() < state["hidden_until"]
+            sold_out_now = time.time() < state["sold_out_until"]
             state["hide_once"] = 0
+            visible = [
+                item
+                for n, item in enumerate(listings)
+                if not (oldest_hidden and n == len(listings) - 1)
+                and not (sold_out_now and item["listing_id"] == state["sold_out_id"])
+            ]
             offset = int(query.get("offset", ["0"])[0])
             limit = int(query.get("limit", ["100"])[0])
             page = [
@@ -132,8 +135,10 @@ class Handler(BaseHTTPRequestHandler):
             state["hide_once"] = 1
             self._json({})
         elif self.path.startswith("/_sell_out_for/"):
+            newest = listings[0]
+            state["sold_out_id"] = float(newest["listing_id"])  # type: ignore[arg-type]
             state["sold_out_until"] = time.time() + float(self.path.rsplit("/", 1)[1])
-            listings[-1]["quantity"] = 1  # restocked with a single item
+            newest["quantity"] = 1  # restocked with a single item
             self._json({})
         elif self.path.startswith("/_fail_batch_for/"):
             state["fail_batch_until"] = time.time() + float(self.path.rsplit("/", 1)[1])
