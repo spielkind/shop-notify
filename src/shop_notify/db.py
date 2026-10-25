@@ -158,6 +158,8 @@ class ListingStore:
     ) -> None:
         self._poll_history = poll_history_days * 86400
         self.events_settings = events or EventSettings()
+        self.last_state_lookup_error: str | None = None
+        """The last Etsy state-lookup error, to avoid repeating the warning every poll."""
         self._db = sqlite3.connect(path)
         self._db.execute("PRAGMA foreign_keys = ON")
         try:

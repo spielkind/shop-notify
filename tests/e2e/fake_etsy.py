@@ -11,6 +11,8 @@ POST /_hide_for/<seconds>                         → leave out the oldest listi
                                                     it comes back 1.00 more expensive
 POST /_sell_out_for/<seconds>                     → the oldest listing is sold out for a while,
                                                     then restocked with a single item
+POST /_fail_batch_for/<seconds>                   → make listings/batch return 500 for a while
+                                                    (the listing-state lookup fails)
 
 Run with: python fake_etsy.py PORT
 """
@@ -28,7 +30,12 @@ IMAGE = Path(__file__).resolve().parents[2] / "docs" / "sample-item.png"
 
 listings: list[dict[str, object]] = []
 port = 0
-state: dict[str, float] = {"hide_once": 0, "hidden_until": 0, "sold_out_until": 0}
+state: dict[str, float] = {
+    "hide_once": 0,
+    "hidden_until": 0,
+    "sold_out_until": 0,
+    "fail_batch_until": 0,
+}
 
 
 def add_listing(title: str | None = None) -> dict[str, object]:
@@ -99,6 +106,9 @@ class Handler(BaseHTTPRequestHandler):
             ]
             self._json({"count": len(visible), "results": page})
         elif url.path == "/v3/application/listings/batch":
+            if time.time() < state["fail_batch_until"]:
+                self.send_error(500, "batch temporarily unavailable")
+                return
             ids = {int(i) for i in query["listing_ids"][0].split(",")}
             results = [
                 {
@@ -124,6 +134,9 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path.startswith("/_sell_out_for/"):
             state["sold_out_until"] = time.time() + float(self.path.rsplit("/", 1)[1])
             listings[-1]["quantity"] = 1  # restocked with a single item
+            self._json({})
+        elif self.path.startswith("/_fail_batch_for/"):
+            state["fail_batch_until"] = time.time() + float(self.path.rsplit("/", 1)[1])
             self._json({})
         elif self.path.startswith("/_hide_for/"):
             state["hidden_until"] = time.time() + float(self.path.rsplit("/", 1)[1])

@@ -8,6 +8,13 @@ notation (e.g. `1.0.0rc1` for `1.0.0-rc.1`).
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-10-25
+
+### Fixed
+- When the state lookup for a missing listing keeps failing, the warning is
+  logged once instead of on every poll, and again if the error changes or after
+  it recovers
+
 ## [1.3.1] - 2026-10-25
 
 ### Fixed
@@ -225,7 +232,8 @@ until it has been verified against the real Etsy API with an approved key.
 
 Original version for the Etsy API v2 (never tagged).
 
-[Unreleased]: https://github.com/spielkind/shop-notify/compare/v1.3.1...HEAD
+[Unreleased]: https://github.com/spielkind/shop-notify/compare/v1.3.2...HEAD
+[1.3.2]: https://github.com/spielkind/shop-notify/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/spielkind/shop-notify/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/spielkind/shop-notify/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/spielkind/shop-notify/compare/v1.1.0...v1.2.0

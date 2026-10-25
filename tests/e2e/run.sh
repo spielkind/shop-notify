@@ -9,8 +9,10 @@
 #      no duplicate mail, nothing gone
 #   4. an old listing is gone for longer than FORGET_AFTER_HOURS and comes back with a
 #      new price: one "back in the shop" mail with the old price and when it was last seen
-#   5. a listing is sold out for a short while and restocked with a single item: one
-#      "back in stock" mail right away (NOTIFY_EVENTS includes restocked)
+#   5. a listing sells out while the state lookup is temporarily unavailable: the first
+#      lookup fails and is retried on a later poll, which records the sold-out state
+#   6. the sold-out listing is restocked with a single item: one "back in stock" mail
+#      (NOTIFY_EVENTS includes restocked)
 #
 # Usage: tests/e2e/run.sh [IMAGE]   (default: shop-notify:ci; needs docker, curl, jq, python3)
 set -euo pipefail
@@ -123,11 +125,18 @@ check_mail '.HTML | contains("Back in the shop")' "back badge missing"
 check_mail '.HTML | contains("13.51") and contains("12.51")' "new or old price missing"
 check_mail '.HTML | contains("last seen")' "last seen missing"
 
-echo "5. a sold-out listing is notified as back in stock when it is restocked"
-curl -sf -X POST "http://localhost:$ETSY_PORT/_sell_out_for/15" >/dev/null
+echo "5. a failed state lookup is retried on a later poll"
+# the listing sells out while the state lookup is temporarily unavailable, so the first
+# lookup fails; once it recovers the lookup is retried and the sold-out state is recorded
+curl -sf -X POST "http://localhost:$ETSY_PORT/_fail_batch_for/25" >/dev/null
+curl -sf -X POST "http://localhost:$ETSY_PORT/_sell_out_for/90" >/dev/null
+lookup_failed() { log_has "Could not look up the state of missing listings"; }
+wait_for 30 lookup_failed || fail "failed state lookup not logged"
 sold_out_logged() { log_has "Listing 1001 is no longer listed: sold out"; }
-wait_for 30 sold_out_logged || fail "sold-out listing not recognised"
-wait_for 60 three_mails || fail "no mail for the restocked listing"
+wait_for 60 sold_out_logged || fail "sold-out state not recorded after the lookup recovered"
+
+echo "6. the restocked listing is notified as back in stock"
+wait_for 120 three_mails || fail "no mail for the restocked listing"
 id=$(curl -sf "$MAILPIT_API/messages" | jq -r '.messages[0].ID')
 curl -sf "$MAILPIT_API/message/$id" > "$MAIL"
 echo "   subject: $(jq -r .Subject "$MAIL")"

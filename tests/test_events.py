@@ -460,6 +460,44 @@ def test_poll_survives_failing_state_lookup(caplog: pytest.LogCaptureFixture) ->
     store.close()
 
 
+def test_recurring_state_lookup_error_is_warned_once(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.DEBUG)
+    client = _client()
+    store = make_store()
+    client.active_listings.return_value = [priced(1, 1000)]
+    cli.run_once(client, store, RecordingNotifier(), 42)
+    client.active_listings.return_value = []
+    client.listing_states.side_effect = EtsyError("down")
+
+    def warnings() -> list[str]:
+        return [
+            r.message
+            for r in caplog.records
+            if r.levelno == logging.WARNING and "look up" in r.message
+        ]
+
+    # the lookup fails on three polls in a row but only warns the first time
+    for second in (60, 120, 180):
+        with patch("time.time", return_value=second):
+            cli.run_once(client, store, RecordingNotifier(), 42)
+    assert len(warnings()) == 1
+    assert store.last_state_lookup_error == "down"
+
+    # a different error warns again
+    client.listing_states.side_effect = EtsyError("gone")
+    with patch("time.time", return_value=240):
+        cli.run_once(client, store, RecordingNotifier(), 42)
+    assert len(warnings()) == 2
+
+    # once it recovers the state is cleared, so the next failure warns again
+    client.listing_states.side_effect = None
+    client.listing_states.return_value = {1: "sold_out"}
+    with patch("time.time", return_value=300):
+        cli.run_once(client, store, RecordingNotifier(), 42)
+    assert store.last_state_lookup_error is None
+    store.close()
+
+
 def test_failed_state_lookup_is_retried_on_a_later_poll(caplog: pytest.LogCaptureFixture) -> None:
     caplog.set_level(logging.INFO)
     client = _client()
