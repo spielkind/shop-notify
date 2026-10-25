@@ -212,11 +212,17 @@ def describe_notice(item: Listing) -> str:
 
 
 def look_up_states(client: EtsyClient, store: ListingStore, result: SyncResult) -> None:
-    """Ask Etsy why listings went missing: sold out, deactivated, expired or removed."""
-    if not result.newly_missing:
+    """Ask Etsy why listings went missing: sold out, deactivated, expired or removed.
+
+    Covers listings missing for the first time this poll and those whose state hasn't
+    been looked up yet (e.g. because an earlier lookup failed), so a transient Etsy
+    error doesn't leave a listing in an unknown state forever.
+    """
+    pending = sorted({*result.newly_missing, *store.missing_without_state()})
+    if not pending:
         return
     try:
-        states = client.listing_states(result.newly_missing)
+        states = client.listing_states(pending)
     except EtsyError as e:
         log.warning("Could not look up the state of missing listings: %s", e)
         return

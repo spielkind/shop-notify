@@ -203,7 +203,7 @@ class EtsyClient:
     def active_listings(self, shop_id: int) -> Iterator[Listing]:
         """Yield all active listings of a shop, newest first, following pagination."""
         offset = 0
-        seen: set[object] = set()
+        seen: set[int] = set()
         self.listings_reported = self.listings_received = 0
         while True:
             response = self._get(
@@ -223,7 +223,9 @@ class EtsyClient:
                     "has the Etsy API changed?",
                     len(page.results),
                 )
-            seen.update(item.get("listing_id") for item in page.results)
+            # Only listings that could be read count as received; an entry that fails
+            # validation is missing from the result even if it carries a listing_id
+            seen.update(item.listing_id for item in listings)
             yield from listings
             offset += len(page.results)
             if not page.results or offset >= page.count:
