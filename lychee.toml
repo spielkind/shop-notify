@@ -17,8 +17,9 @@ exclude = [
   '^https://github\.com/spielkind/shop-notify/security/',
   '^https://github\.com/spielkind/shop-notify/settings',
   '^https://www\.etsy\.com/developers/your-apps',
-  # Comparison link to the not yet released state
-  '/compare/v[^/]+\.\.\.HEAD$',
+  # Comparison links point at this repo's own tags; the newest one only exists
+  # once the release is tagged, so these can't be checked on the release PR
+  '/spielkind/shop-notify/compare/',
 ]
 
 exclude_path = ["tests", "src"]
