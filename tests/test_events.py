@@ -176,6 +176,21 @@ def test_missing_without_state_lists_unresolved_listings(store: ListingStore) ->
     assert store.missing_without_state() == []
 
 
+def test_missing_again_after_a_known_state_is_looked_up_afresh(store: ListingStore) -> None:
+    with at(0):
+        notify_all(store, [priced(1, 1000)])
+    with at(10):
+        store.record_states({1: "inactive"}, store.sync([]))  # goes missing, state recorded
+    assert store.missing_without_state() == []  # its state is known
+
+    # it comes back, then goes missing again: the earlier state no longer counts
+    with at(20):
+        notify_all(store, [priced(1, 1000)])
+    with at(30):
+        store.sync([])
+    assert store.missing_without_state() == [1]
+
+
 @pytest.mark.parametrize(
     ("prices", "expected"),
     [
