@@ -463,7 +463,9 @@ class ListingStore:
         """Missing listings whose Etsy state hasn't been looked up yet.
 
         Covers listings whose state lookup failed before, so that it is retried on a
-        later poll instead of leaving them in an unknown state forever.
+        later poll instead of leaving them in an unknown state forever. Only a state
+        recorded since the current ``missing_since`` counts: a listing that went
+        missing again after an earlier state is still looked up afresh.
         """
         placeholders = ",".join("?" * len(_MISSING_STATES))
         return [
@@ -477,6 +479,7 @@ class ListingStore:
                         SELECT 1 FROM listing_events e
                         WHERE e.listing_id = listings.listing_id
                             AND e.event IN ({placeholders})
+                            AND e.time >= listings.missing_since
                     )
                 ORDER BY listing_id
                 """,  # only placeholders are interpolated
