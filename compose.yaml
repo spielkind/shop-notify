@@ -13,3 +13,16 @@ services:
       # FILTER_CONFIG=/config/filters.yml in .env
       # - ./filters.yml:/config/filters.yml:ro
     restart: unless-stopped
+    # Runtime hardening: limit what a compromised container could do. The image
+    # already runs as a non-root user; /data is the only writable path it needs,
+    # and /tmp is a small tmpfs for downloaded notification images (Apprise).
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
