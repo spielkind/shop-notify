@@ -158,6 +158,24 @@ def test_other_states_are_recorded_only(store: ListingStore) -> None:
     assert [e.event for e in store.events(since=10)] == ["inactive", "removed"]
 
 
+def test_missing_without_state_lists_unresolved_listings(store: ListingStore) -> None:
+    with at(0):
+        notify_all(store, [priced(1, 1000), priced(2, 1000), priced(3, 1000)])
+    with at(10):
+        store.sync([])  # all three go missing, but the state lookup is skipped
+    assert store.missing_without_state() == [1, 2, 3]
+
+    with at(20):
+        store.record_states({1: "inactive", 2: "sold_out"}, store.sync([]))
+    # 1 (inactive) and 2 (sold out) are resolved; only 3 still needs a lookup
+    assert store.missing_without_state() == [3]
+
+    # listings that have gone are no longer retried
+    with at(100):
+        assert ids(store.sync([], forget_after=30).gone) == [1, 2, 3]
+    assert store.missing_without_state() == []
+
+
 @pytest.mark.parametrize(
     ("prices", "expected"),
     [
@@ -439,6 +457,44 @@ def test_poll_survives_failing_state_lookup(caplog: pytest.LogCaptureFixture) ->
     client.listing_states.side_effect = EtsyError("down")
     cli.run_once(client, store, RecordingNotifier(), 42)
     assert "Could not look up the state of missing listings: down" in caplog.text
+    store.close()
+
+
+def test_failed_state_lookup_is_retried_on_a_later_poll(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.INFO)
+    client = _client()
+    store = make_store(enabled=frozenset({"new", "restocked"}))
+    notifier = RecordingNotifier()
+    client.active_listings.return_value = [priced(1, 1000)]
+    with patch("time.time", return_value=0):
+        cli.run_once(client, store, notifier, 42)
+
+    # the listing disappears but the first state lookup fails
+    client.active_listings.return_value = []
+    client.listing_states.side_effect = EtsyError("down")
+    with patch("time.time", return_value=60):
+        cli.run_once(client, store, notifier, 42)
+    assert store.pending() == []
+
+    # the next poll retries the lookup, even though nothing newly went missing
+    client.listing_states.side_effect = None
+    client.listing_states.return_value = {1: "sold_out"}
+    with patch("time.time", return_value=120):
+        cli.run_once(client, store, notifier, 42)
+    client.listing_states.assert_called_with([1])
+    assert "Listing 1 is no longer listed: sold out" in caplog.text
+
+    # once the state is known, it is not requested again
+    client.listing_states.reset_mock()
+    with patch("time.time", return_value=180):
+        cli.run_once(client, store, notifier, 42)
+    client.listing_states.assert_not_called()
+
+    # and the restock is still detected afterwards
+    client.active_listings.return_value = [priced(1, 1000, 1)]
+    with patch("time.time", return_value=240):
+        assert cli.run_once(client, store, notifier, 42) == 1
+    assert notifier.calls[-1] == [1]
     store.close()
 
 

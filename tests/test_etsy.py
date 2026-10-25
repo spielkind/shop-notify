@@ -222,6 +222,10 @@ def test_malformed_listings_are_skipped(caplog: pytest.LogCaptureFixture) -> Non
     assert route.calls[1].request.url.params["offset"] == "3"
     assert "Skipping malformed entry 4 from the Etsy API: title: Field required" in caplog.text
     assert "Skipping malformed entry without listing_id" in caplog.text
+    # a skipped entry (even one with a listing_id, like 4) doesn't count as received,
+    # so the result is correctly reported as incomplete
+    assert (client.listings_received, client.listings_reported) == (3, 6)
+    assert not client.listings_complete
 
 
 @respx.mock

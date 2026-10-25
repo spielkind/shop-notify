@@ -74,6 +74,10 @@ _LEGACY_COLUMNS = {"listing_id", "request_date", "notified_date", "result"}
 # Notices for a listing that (re)appears; a filtered one is checked again later
 _APPEARANCES = ("new", "back", "restocked")
 
+# Etsy states recorded for a listing that went missing; once one is known, the
+# state has been looked up and doesn't need to be requested again
+_MISSING_STATES = ("sold_out", "inactive", "expired", "removed")
+
 
 @dataclass(frozen=True)
 class EventSettings:
@@ -452,6 +456,31 @@ class ListingStore:
         ]
         for item in result.gone:
             self._event(item.listing_id, now, "gone")
+
+    def missing_without_state(self) -> list[int]:
+        """Missing listings whose Etsy state hasn't been looked up yet.
+
+        Covers listings whose state lookup failed before, so that it is retried on a
+        later poll instead of leaving them in an unknown state forever.
+        """
+        placeholders = ",".join("?" * len(_MISSING_STATES))
+        return [
+            row[0]
+            for row in self._db.execute(
+                f"""
+                SELECT listing_id FROM listings
+                WHERE missing_since IS NOT NULL AND gone_since IS NULL
+                    AND sold_out_since IS NULL
+                    AND NOT EXISTS (
+                        SELECT 1 FROM listing_events e
+                        WHERE e.listing_id = listings.listing_id
+                            AND e.event IN ({placeholders})
+                    )
+                ORDER BY listing_id
+                """,  # only placeholders are interpolated
+                _MISSING_STATES,
+            )
+        ]
 
     def record_states(self, states: dict[int, str], result: SyncResult) -> None:
         """Record the Etsy state of listings that went missing (sold_out, inactive, …)."""
