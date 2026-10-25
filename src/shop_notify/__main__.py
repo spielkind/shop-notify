@@ -224,8 +224,14 @@ def look_up_states(client: EtsyClient, store: ListingStore, result: SyncResult) 
     try:
         states = client.listing_states(pending)
     except EtsyError as e:
-        log.warning("Could not look up the state of missing listings: %s", e)
+        # The lookup is retried every poll, so don't repeat the same warning each time;
+        # log a recurring error once at WARNING, then at DEBUG until it changes or clears.
+        message = str(e)
+        level = logging.DEBUG if message == store.last_state_lookup_error else logging.WARNING
+        log.log(level, "Could not look up the state of missing listings: %s", e)
+        store.last_state_lookup_error = message
         return
+    store.last_state_lookup_error = None
     store.record_states(states, result)
     for listing_id, state in sorted(states.items()):
         if state != "active":  # otherwise a gap in Etsy's listing index
