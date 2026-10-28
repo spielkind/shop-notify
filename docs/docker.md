@@ -23,7 +23,8 @@ docker compose up -d
 - Update: `docker compose pull && docker compose up -d` · Build locally: `docker compose up -d --build`
 - Docker restarts a crashed container (`restart: unless-stopped`), but not an unhealthy one.
 - `compose.yaml` runs the container hardened: read-only root filesystem (only `./data` and a small `/tmp` tmpfs are writable), all Linux capabilities dropped, no privilege escalation, and memory/CPU/PID limits. The image already runs as a non-root user.
-- The optional [read-only API](api.md) of the history runs as a second container from the same image: `docker compose --profile api up -d`. It reads `./data`, gets no `.env` and publishes no port.
+- The optional [read-only API](api.md) of the history runs as a second container from the same image: `docker compose --profile api up -d`. It reads `./data`, gets no `.env`, publishes no port and is only on an internal network.
+- The optional [web UI](web-ui.md) adds the containers `ui` and `caddy`: `COMPOSE_PROFILES=caddy` (or `ui` behind your own nginx or Apache) in `.env`.
 
 ## Without Compose
 

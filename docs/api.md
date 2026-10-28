@@ -1,6 +1,6 @@
 # Read-only API
 
-`shop-notify api` serves the recorded history as JSON: the polls, the events of all listings and the state of a single listing. It's meant for tools that show the history – for example the planned web UI ([#30](https://github.com/spielkind/shop-notify/issues/30)) – and works as an alternative to `shop-notify history`.
+`shop-notify api` serves the recorded history as JSON: the polls, the events of all listings and the state of a single listing. It's meant for tools that show the history – like the [web UI](web-ui.md) – and works as an alternative to `shop-notify history`.
 
 - **Read-only:** the API runs as its own process next to the poller and opens the database read-only for every request. It never changes the database, and only `GET` requests are answered.
 - **No credentials:** it only needs the database – not the Etsy API key or the notification targets.
@@ -11,14 +11,14 @@
 
 ## Running
 
-With Docker Compose, the `api` service of [`compose.yaml`](../compose.yaml) is started with the `api` profile. It uses the same image and `./data` directory as the poller, gets no `.env`, publishes no port and runs hardened like the poller:
+With Docker Compose, the `api` service of [`compose.yaml`](../compose.yaml) is started with the `api` profile – and with the [web UI](web-ui.md), which uses it. It uses the same image and `./data` directory as the poller, gets no `.env`, publishes no port and runs hardened like the poller. It is only attached to the internal network `backend`, without internet access, so only the web UI and other containers on that network reach it:
 
 ```sh
 docker compose --profile api up -d
 docker compose exec api python -c "import urllib.request as u; print(u.urlopen('http://127.0.0.1:8080/api/health').read().decode())"
 ```
 
-To reach it from the host for testing, add `ports: ["127.0.0.1:8080:8080"]` to the `api` service.
+Docker can't publish ports of a container that is only on an internal network; to use the API from the host, run `shop-notify api` locally (below) or add your container to the `backend` network.
 
 Without Docker:
 

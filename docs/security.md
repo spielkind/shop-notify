@@ -7,8 +7,9 @@ flows are described in [architecture.md](architecture.md).
 
 ## Security requirements
 
-Shop Notify handles no user accounts and no payments. Its assets are the **credentials
-in its configuration** and the **integrity of the notifications**. It must:
+Shop Notify handles no payments. Its assets are the **credentials in its configuration**,
+the **integrity of the notifications** and – with the optional [web UI](web-ui.md) – the
+**accounts of the UI** and the **history it shows**. It must:
 
 1. **Keep credentials confidential**: the Etsy API key and shared secret and the
    passwords and tokens in notification URLs must not appear in logs, notifications,
@@ -24,6 +25,9 @@ in its configuration** and the **integrity of the notifications**. It must:
    database, needs no credentials and is not reachable from other machines by default.
 5. **Deliver unmodified software**: releases and images must be traceable to the
    source code in this repository and verifiable by users.
+6. **Show the history to signed-in users only** (web UI): passwords are only stored as
+   hashes and never logged, sessions can't be guessed or read by scripts, guessing
+   passwords is slowed down, and shop content can't inject scripts into the pages.
 
 ## What is not protected
 
@@ -44,6 +48,14 @@ Users should be aware of these limits:
   history – titles, prices and poll errors. It listens on `127.0.0.1` by default and
   publishes no port in `compose.yaml`; to reach it from elsewhere, put a reverse proxy
   with authentication in front of it.
+- **All accounts of the web UI see everything.** There are no roles; every account
+  can read the whole history. Accounts are managed by whoever can run commands on the
+  server.
+- **The web UI relies on the proxy in front of it** for TLS, for passing on the host
+  name and for an honest `X-Forwarded-For`: if the UI is reached without that proxy,
+  the client address used to limit failed sign-ins can be spoofed (the limit per
+  account still applies). The limit is kept in memory and starts afresh when the UI
+  restarts.
 - **Availability depends on Etsy.** If the API is unavailable or the quota is used up,
   notifications are delayed; a failed delivery is retried with the next poll.
 - **No protection against a compromised Etsy API, notification service or Python
@@ -61,6 +73,13 @@ Users should be aware of these limits:
 | Reading or changing data through the API | optional API | disabled by default; listens on `127.0.0.1`, no published port in `compose.yaml`; only `GET`; the database is opened read-only (`mode=ro`) for every request; the API process gets no `.env` and no credentials |
 | Malicious API requests | optional API | parameters validated with pydantic (unknown or repeated ones rejected, at most 20, `limit` ≤ 500, search text ≤ 200 characters); parameterised queries, LIKE wildcards escaped; request timeout; unexpected errors only logged, not returned; container memory, CPU and PID limits |
 | Slow regular expressions (ReDoS) | filters | patterns come from the operator, titles are at most 140 characters; invalid patterns are rejected at startup |
+| Guessing passwords | web UI sign-in | at least 12 characters; scrypt hashes (N=2^15, r=8, p=3); at most 5 failed sign-ins per account and 20 per client address in 15 minutes; the same answer and about the same time for unknown accounts |
+| Stolen or forged sessions | web UI | 256-bit random tokens, stored only as SHA-256 hashes; `__Host-` cookie with `HttpOnly`, `Secure` and `SameSite=Lax`; expire after `UI_SESSION_DAYS`; ended by signing out, changing the password or `logout-all` |
+| Script injection (XSS) via listing titles, URLs or images | Etsy API → web UI | Svelte escapes all output; no scripts at all (server-side rendering only, CSP `script-src 'none'`, `default-src 'none'`); links and images only to Etsy over HTTPS |
+| Cross-site requests (CSRF), clickjacking | web UI | SvelteKit's origin check for every form; `SameSite=Lax`; `frame-ancestors 'none'` and `X-Frame-Options: DENY` |
+| Redirect to another site after sign-in | web UI | only local paths are accepted as target |
+| Requests for other host names (DNS rebinding, misconfigured proxy) | web UI | rejected with 421 unless the host is `UI_DOMAIN` |
+| Account takeover | web UI | no sign-up and no password reset over the web; accounts only via `shop-notify-ui` on the server |
 | Malformed or hostile API responses | Etsy API | pydantic validation of every item; invalid items are skipped and logged; timeouts and bounded retries |
 | Man-in-the-middle | network | HTTPS with certificate verification (httpx defaults, not configurable); the default Etsy endpoint is HTTPS |
 | Privilege escalation after a compromise | runtime | non-root container user, no pip/build tools in the image; sandboxed systemd unit (`NoNewPrivileges`, `ProtectSystem=strict`, system call filter, no capabilities) |
@@ -79,7 +98,9 @@ Users should be aware of these limits:
    connections and has a single untrusted input (Etsy API responses and images).
    Everything else is configuration supplied by the operator. The optional API is a
    separate process that is disabled by default, only reads, holds no credentials and
-   validates every request.
+   validates every request; the optional web UI is a separate container that sends no
+   scripts, needs a session for everything but the sign-in and reaches the API over an
+   internal network only.
    *Evidence:* [architecture.md](architecture.md#external-interfaces-and-trust-boundaries).
 2. **Untrusted input is validated and encoded at the boundaries** (requirement 2).
    Responses are parsed into pydantic models item by item; data reaches SQLite only
@@ -101,8 +122,10 @@ Users should be aware of these limits:
 6. **Verified supply chain** (requirement 5). *Evidence:* pinned dependencies and base
    images, signed tags, immutable releases, SBOM and provenance attestations
    (`gh attestation verify`), OpenSSF Scorecard.
-7. **Behaviour is tested end to end.** 100 % line and branch coverage plus an
-   end-to-end test of the Docker image against a fake Etsy API and a mail server.
+7. **Behaviour is tested end to end.** 100 % line and branch coverage (Python and the
+   UI's server code) plus an end-to-end test of the Docker images against a fake Etsy
+   API and a mail server, including signing in to the web UI behind Caddy, nginx and
+   Apache (requirement 6).
 
 **Design principles applied** (Saltzer and Schroeder): economy of mechanism (one
 process, few dependencies), fail-safe defaults (TLS verification, silent first run,

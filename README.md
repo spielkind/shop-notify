@@ -18,6 +18,7 @@ Shop Notify watches an Etsy shop and tells you – and anyone else you like – 
 - **Any notification channel:** HTML e-mail with item images to as many recipients as you want, push to your phone via ntfy, Telegram, Signal and [100+ more](https://github.com/caronc/apprise/wiki) – also several at once.
 - **More than new items:** optionally back in stock, price drops and increases, sold out and almost sold out – see [events](https://github.com/spielkind/shop-notify/blob/main/docs/events.md).
 - **Only what you care about:** filters by keyword, regular expression or price – e.g. to skip reserved listings.
+- **History at a glance:** an optional web UI with sign-in shows the polls, the events of all listings and each listing's history – see [web UI](https://github.com/spielkind/shop-notify/blob/main/docs/web-ui.md).
 - **Runs unattended:** made for a Raspberry Pi, as a Docker container or systemd service, with health check, watchdog and Etsy rate-limit handling.
 
 ## How it works
@@ -222,7 +223,9 @@ docker compose exec shop-notify shop-notify history   # in Docker
 
 Nothing before the first run is known (Etsy has no history), and changes are only noticed at the next poll. The database layout is described in [docs/architecture.md](https://github.com/spielkind/shop-notify/blob/main/docs/architecture.md#database).
 
-The history is also available as JSON from an optional, read-only API (`shop-notify api`, or `docker compose --profile api up -d`). **→ [Read-only API](https://github.com/spielkind/shop-notify/blob/main/docs/api.md)**
+The history can also be viewed in an optional **web UI** with sign-in, over HTTPS with Caddy and Let's Encrypt or behind your own nginx or Apache. **→ [Web UI](https://github.com/spielkind/shop-notify/blob/main/docs/web-ui.md)**
+
+It is also available as JSON from an optional, read-only API (`shop-notify api`, or `docker compose --profile api up -d`). **→ [Read-only API](https://github.com/spielkind/shop-notify/blob/main/docs/api.md)**
 
 ### Health check
 After every successful poll Shop Notify touches a heartbeat file. `shop-notify healthcheck` exits with `0` if the last successful poll is younger than `2 × POLL_INTERVAL + 60 s`, otherwise with `1` – e.g. when Etsy rejects the API key or the network is down. Docker uses it for its health status; manually:
