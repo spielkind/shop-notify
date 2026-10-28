@@ -25,6 +25,8 @@ All modules are in [`src/shop_notify/`](../src/shop_notify):
 | `db.py` | `ListingStore`: SQLite database of all listings, their history and the polls, with automatic schema migration (see [Database](#database)) |
 | `filters.py` | `Filters`: include/exclude rules (keywords, regular expressions) and price limits from `.env` and `filters.yml` (see [filters.md](filters.md)) |
 | `notifications.py` | `MessageRenderer` (Jinja templates, en/de, plain text and HTML), `AppriseNotifier` (e-mail: one HTML mail; push/chat: one message per item with image), `ConsoleNotifier` |
+| `scheduling.py` | Validated local-time quiet windows and daily/weekly digest slots |
+| `outbox.py` | Durable per-target queue, per-group price baselines and digest slots; coalesces events and acknowledges successful targets |
 | `systemd.py` | `sd_notify` messages (ready, watchdog, status) when running as a systemd service |
 | `templates/` | Built-in message templates per language; can be replaced with `NOTIFY_TEMPLATE_DIR` |
 
@@ -47,7 +49,7 @@ The web UI is a separate [SvelteKit](https://svelte.dev/docs/kit) app in [`ui/`]
    and quantity, and queues a notification (`pending`) for the enabled
    [events](events.md): new, back, restocked, price drop or rise, low stock. A queued
    notification stays until it was sent, so failed ones are retried.
-   - A notified listing that is missing from a complete response is marked as
+   - A listing that is missing from a complete response is marked as
      *missing*; if it comes back before `FORGET_AFTER_HOURS` (24 h) nothing is sent.
    - After that it counts as *gone*. If it comes back later, it is notified as *back in
      the shop* with its previous price and when it was last seen.
@@ -66,8 +68,11 @@ The web UI is a separate [SvelteKit](https://svelte.dev/docs/kit) app in [`ui/`]
    every poll and notified once they pass (e.g. after a title change).
 5. On the first run (empty database) the new listings are only recorded and printed to
    the console. Otherwise the notification is rendered with the stored images and sent
-   to every target. Only after that are the listings marked as notified – if sending
-   fails, they are sent again with the next poll.
+   to eligible targets. The durable outbox applies quiet hours and recipient digest
+   slots (see [notifications.md](notifications.md)). Each successful target is
+   acknowledged separately; only failed targets retry on the next eligible poll.
+   Never-delivered new listings that are gone/sold out are discarded. Delivery is
+   not exactly once: a crash between sending and acknowledgement can duplicate it.
 6. The poll is recorded (counts, completeness, changes, errors), a heartbeat file is
    updated (`healthcheck`) and, under systemd, the watchdog is notified. The process
    waits `POLL_INTERVAL` seconds and starts again.
@@ -93,6 +98,30 @@ network file systems such as NFS or SMB.
 ```mermaid
 erDiagram
     listings ||--o{ listing_events : has
+    listings ||--o{ notification_outbox : queues
+    listings ||--o{ recipient_prices : tracks
+    delivery_groups ||--o{ notification_outbox : schedules
+    notification_outbox {
+        INTEGER listing_id PK,FK
+        TEXT target PK "hashed service identity, or console"
+        TEXT group_name FK
+        TEXT notice "event and metadata JSON"
+        REAL queued "enqueue time"
+        REAL digest_slot "assigned slot; retained across retries"
+    }
+    recipient_prices {
+        INTEGER listing_id PK,FK
+        TEXT group_name PK
+        TEXT price "per-group price baseline JSON"
+        INTEGER known "delivered or recorded"
+    }
+    delivery_groups {
+        TEXT name PK "empty string for immediate targets"
+        REAL digest_slot "next due UTC timestamp, NULL for immediate"
+    }
+    delivery_metadata {
+        TEXT key PK "one-time pending fanout marker"
+    }
     listings {
         INTEGER listing_id PK "Etsy listing ID"
         INTEGER first_seen "first poll that returned it"
@@ -139,7 +168,7 @@ All times are Unix timestamps (UTC). Events:
 |---|---|---|
 | `new` | first seen | price and Etsy's timestamps: `created`, `renewed`, `active_since`, `modified` |
 | `imported` | taken over from a database of version 1.0 | – |
-| `notified` / `recorded` | notification sent / only recorded (first run) | `kind` unless `new` |
+| `notified` / `recorded` | target accepted notification / only recorded (first run) | `kind`, `group` for routed deliveries; legacy/recorded: `kind` unless `new` |
 | `missing` | came back within `FORGET_AFTER_HOURS` | `since` (last seen), `seconds` missing |
 | `gone` | missing for longer than `FORGET_AFTER_HOURS` | – |
 | `filtered` | held back by the filters | `reason`, e.g. `exclude regex '^reserved\b'` |
@@ -156,7 +185,10 @@ table of 1.0 (`listing_id`, `request_date`, `notified_date`, `result`); version 
 (Shop Notify 1.2) added the `filtered` columns; version 3 (Shop Notify 1.3) replaced
 `back` with the notification queue `pending` and added `sold_out_since`, `notified_price`
 and the poll counts `restocked` and `sold_out`; version 4 (Shop Notify 1.6) added the
-images `image_url`, `thumbnail_url` and `image_checked`.
+images `image_url`, `thumbnail_url` and `image_checked`; version 5 (Shop Notify 1.8)
+added `notification_outbox`, `recipient_prices`, `delivery_groups` and the one-time
+fanout marker in `delivery_metadata`. `listings.pending` remains a compatibility
+summary for the API; per-target delivery state is authoritative in the outbox.
 
 ## External interfaces and trust boundaries
 

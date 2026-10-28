@@ -1,3 +1,4 @@
+import hashlib
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -59,6 +60,8 @@ class _Target:
     apprise: apprise.Apprise
     html: bool
     attachments: bool
+    key: str = ""
+    group: str = ""
 
 
 @dataclass(frozen=True)
@@ -373,6 +376,14 @@ class ConsoleNotifier:
             return
         self.send(self._renderer.render(listings, initial=initial))
 
+    @property
+    def routes(self) -> dict[str, str]:
+        return {} if self._first_run_only else {"console": ""}
+
+    def deliver(self, target: str, listings: Sequence[Listing], *, summary: bool = False) -> bool:
+        self.notify(listings)
+        return True
+
     def send(self, message: Message) -> list[Delivery]:
         print(f"{message.subject}\n\n{message.text}\n")
         return [Delivery("console", ok=True)]
@@ -391,6 +402,23 @@ class MultiNotifier:
     def notify(self, listings: Sequence[Listing], *, initial: bool = False) -> None:
         for notifier in self._notifiers:
             notifier.notify(listings, initial=initial)
+
+    @property
+    def routes(self) -> dict[str, str]:
+        return {
+            target: group
+            for notifier in self._notifiers
+            if isinstance(notifier, (AppriseNotifier, ConsoleNotifier, MultiNotifier))
+            for target, group in notifier.routes.items()
+        }
+
+    def deliver(self, target: str, listings: Sequence[Listing], *, summary: bool = False) -> bool:
+        for notifier in self._notifiers:
+            if isinstance(notifier, (AppriseNotifier, ConsoleNotifier, MultiNotifier)) and (
+                target in notifier.routes
+            ):
+                return notifier.deliver(target, listings, summary=summary)
+        raise ValueError("unknown notification target")
 
 
 class AppriseNotifier:
@@ -411,6 +439,7 @@ class AppriseNotifier:
         images: bool = True,
         images_max: int = 5,
         images_in_summary: bool = False,
+        digest_groups: Sequence[str] = (),
     ) -> None:
         self._renderer = renderer or MessageRenderer()
         self._images = images
@@ -434,12 +463,23 @@ class AppriseNotifier:
             single.add(service)
             name = service.url(privacy=True).split("?", 1)[0]  # type: ignore[no-untyped-call]
             is_email = isinstance(service, NotifyEmail)
+            groups = {str(tag) for tag in service.tags} & set(digest_groups)
+            if len(groups) > 1:
+                raise ValueError(f"target {name} has multiple configured digest-group tags")
+            # Some custom plugins return only the scheme from url(), so include
+            # the parsed authority/path as well. Never persist plaintext credentials.
+            url = service.url()  # type: ignore[no-untyped-call]
+            identity_data = f"{url}|{service.host}|{service.port}|{service.user}|{service.fullpath}"
+            identity = hashlib.sha256(identity_data.encode()).hexdigest()
+            duplicate = sum(t.key.startswith(identity) for t in self._targets)
             self._targets.append(
                 _Target(
                     name,
                     single,
                     html=is_email,
                     attachments=not is_email and bool(service.attachment_support),
+                    key=f"{identity}:{duplicate}",
+                    group=next(iter(groups), ""),
                 )
             )
 
@@ -448,29 +488,48 @@ class AppriseNotifier:
         """Configured targets with credentials masked, safe for logging."""
         return [target.name for target in self._targets]
 
+    @property
+    def routes(self) -> dict[str, str]:
+        return {target.key: target.group for target in self._targets}
+
+    def deliver(self, target: str, listings: Sequence[Listing], *, summary: bool = False) -> bool:
+        return self._send(self._renderer.render(listings), target=target, summary=summary)[0].ok
+
     def send(self, message: Message) -> list[Delivery]:
         """Send a rendered message to every target and report the result per target."""
+        return self._send(message)
+
+    def _send(
+        self, message: Message, *, target: str | None = None, summary: bool = False
+    ) -> list[Delivery]:
         images = _ImageCache()
-        per_item = self._images and 0 < len(message.items) <= self._images_max
+        per_item = not summary and self._images and 0 < len(message.items) <= self._images_max
         deliveries = []
-        for target in self._targets:
-            if target.html:
-                ok = self._notify(target, message.subject, message.html, html=True)
-            elif target.attachments and per_item:
-                results = [
-                    self._notify(target, item.subject, item.text, attach=images.get(item.image_url))
-                    for item in message.items
-                ]
-                ok = all(results)
-            else:
-                attach = None
-                if target.attachments and self._images and self._images_in_summary:
-                    attach = images.combined(
-                        [item.image_url for item in message.items], MAX_SUMMARY_IMAGES
-                    )
-                ok = self._notify(target, message.subject, message.text, attach=attach)
-            deliveries.append(Delivery(target.name, ok=ok))
+        for destination in self._targets:
+            if target is not None and destination.key != target:
+                continue
+            deliveries.append(self._send_target(destination, message, images, per_item))
         return deliveries
+
+    def _send_target(
+        self, target: _Target, message: Message, images: _ImageCache, per_item: bool
+    ) -> Delivery:
+        if target.html:
+            ok = self._notify(target, message.subject, message.html, html=True)
+        elif target.attachments and per_item:
+            results = [
+                self._notify(target, item.subject, item.text, attach=images.get(item.image_url))
+                for item in message.items
+            ]
+            ok = all(results)
+        else:
+            attach = None
+            if target.attachments and self._images and self._images_in_summary:
+                attach = images.combined(
+                    [item.image_url for item in message.items], MAX_SUMMARY_IMAGES
+                )
+            ok = self._notify(target, message.subject, message.text, attach=attach)
+        return Delivery(target.name, ok=ok)
 
     @staticmethod
     def _notify(
@@ -487,6 +546,7 @@ class AppriseNotifier:
                 body=body,
                 body_format=apprise.NotifyFormat.HTML if html else apprise.NotifyFormat.TEXT,
                 attach=attach,
+                tag="all",
             )
         )
 

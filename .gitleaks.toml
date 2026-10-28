@@ -20,7 +20,7 @@ secretGroup = 1
 keywords = [":"]
 
 # Placeholders used in the documentation and example files
-[[allowlists]]
+[allowlist]
 description = "Documentation placeholders"
 regexTarget = "match"
 regexes = [

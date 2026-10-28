@@ -1,6 +1,6 @@
 """SQLite storage of listings, their history and the polls.
 
-Schema version 4 (see ``docs/architecture.md`` for a diagram):
+Schema version 5 (see ``docs/architecture.md`` for a diagram):
 
 - ``listings``: one row per listing ever seen, with its latest state; rows are kept
   when a listing leaves the shop (``gone_since``). ``pending`` holds the notification
@@ -8,6 +8,9 @@ Schema version 4 (see ``docs/architecture.md`` for a diagram):
   ``thumbnail_url`` its main image, looked up again when the listing changes.
 - ``listing_events``: append-only history per listing.
 - ``polls``: one row per poll, kept for ``poll_history_days``.
+- ``notification_outbox``: durable per-target notifications (``pending`` remains
+  the legacy/API summary); ``recipient_prices`` holds each group's baseline and
+  ``delivery_groups`` its next digest slot.
 """
 
 import json
@@ -24,12 +27,16 @@ from types import TracebackType
 from typing import Any, Self
 
 from shop_notify.models import DEFAULT_EVENTS, EVENTS, Listing, ListingImage, Money, Notice
+from shop_notify.outbox import SCHEMA as OUTBOX_SCHEMA
+from shop_notify.outbox import Outbox
+from shop_notify.scheduling import Schedule
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
-_SCHEMA = """
+_SCHEMA = (
+    """
 CREATE TABLE IF NOT EXISTS listings (
     listing_id     INTEGER PRIMARY KEY,
     first_seen     INTEGER NOT NULL,
@@ -72,6 +79,8 @@ CREATE TABLE IF NOT EXISTS polls (
 );
 CREATE INDEX IF NOT EXISTS polls_time ON polls (time);
 """
+    + OUTBOX_SCHEMA
+)
 
 # Schema of versions up to 1.0.x (user_version 0)
 _LEGACY_COLUMNS = {"listing_id", "request_date", "notified_date", "result"}
@@ -278,6 +287,7 @@ class ListingStore:
         """The last Etsy state-lookup error, to avoid repeating the warning every poll."""
         self.last_image_lookup_error: str | None = None
         """The last Etsy image-lookup error, likewise."""
+        self.outbox: Outbox | None = None
         self._readonly = readonly
         if readonly:
             self._db = _open_readonly(path)
@@ -358,13 +368,14 @@ class ListingStore:
             self._db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
     def _upgrade(self, version: int) -> None:
-        """Upgrade the tables of schema version 1, 2 or 3."""
+        """Upgrade older listing columns; outbox tables are created by the schema."""
         alter = self._db.execute
         if version < 3:
             self._upgrade_to_3(version)
         # 4: the main image of each listing, and when it was looked up
-        for column in ("image_url TEXT", "thumbnail_url TEXT", "image_checked INTEGER"):
-            alter(f"ALTER TABLE listings ADD COLUMN {column}")
+        if version < 4:
+            for column in ("image_url TEXT", "thumbnail_url TEXT", "image_checked INTEGER"):
+                alter(f"ALTER TABLE listings ADD COLUMN {column}")
 
     def _upgrade_to_3(self, version: int) -> None:
         alter = self._db.execute
@@ -392,6 +403,20 @@ class ListingStore:
         alter("ALTER TABLE listings DROP COLUMN back")
 
     # -- polling --------------------------------------------------------------
+
+    def configure_delivery(self, routes: dict[str, str], schedule: Schedule) -> Outbox:
+        if self.outbox is None:
+            self.outbox = Outbox(
+                self._db, routes, schedule, self.events_settings.price_change_percent
+            )
+        return self.outbox
+
+    def queue_refiltered(self, items: Iterable[Listing]) -> None:
+        with self._db:
+            for item in items:
+                stored = self.listing(item.listing_id)
+                if stored is not None and stored.filtered and stored.pending is None:
+                    self._queue(item.listing_id, None, [Notice(kind="new")])
 
     def is_empty(self) -> bool:
         return self._db.execute("SELECT 1 FROM listings LIMIT 1").fetchone() is None
@@ -468,10 +493,26 @@ class ListingStore:
             (listing_id, now, event, json.dumps(details) if details else None),
         )
 
-    def _queue(self, listing_id: int, current: str | None, candidates: Iterable[Notice]) -> None:
+    def _queue(
+        self,
+        listing_id: int,
+        current: str | None,
+        candidates: Iterable[Notice],
+        *,
+        per_group: dict[str, list[Notice]] | None = None,
+    ) -> None:
         """Queue the first enabled notice, unless a more important one is waiting."""
         enabled = self.events_settings.enabled
-        notice = next((n for n in candidates if n.kind in enabled), None)
+        candidates = [n for n in candidates if n.kind in enabled]
+        if self.outbox is not None:
+            if per_group is not None:
+                per_group = {
+                    group: [n for n in notices if n.kind in enabled]
+                    for group, notices in per_group.items()
+                }
+                candidates += [n for notices in per_group.values() for n in notices]
+            self.outbox.queue(listing_id, candidates, per_group=per_group)
+        notice = next(iter(candidates), None)
         if notice is None:
             return
         if current is not None:
@@ -543,6 +584,7 @@ class ListingStore:
             )
         elif missing_since is not None and sold_out_since is None:
             self._event(item.listing_id, now, "missing", since=last_seen, seconds=now - last_seen)
+        appearances = candidates.copy()
         candidates += self._price_notices(item, old, _money(notified))
         threshold = self.events_settings.low_stock
         if low is not None and (old.quantity is None or old.quantity > threshold):
@@ -556,7 +598,14 @@ class ListingStore:
             """,
             (now, item.model_dump_json(), item.listing_id),
         )
-        self._queue(item.listing_id, pending, candidates)
+        per_group = None
+        if self.outbox is not None:
+            low_notices = [n for n in candidates if n.kind == "low_stock"]
+            per_group = {
+                group: appearances + self._price_notices(item, old, baseline) + low_notices
+                for group, baseline in self.outbox.prices(item.listing_id).items()
+            }
+        self._queue(item.listing_id, pending, candidates, per_group=per_group)
         return appeared
 
     def _price_notices(self, item: Listing, old: Listing, notified: Money | None) -> list[Notice]:
@@ -580,17 +629,18 @@ class ListingStore:
         present = [item.listing_id for item in listings]
         placeholders = ",".join("?" * len(present))
         absent = f"listing_id NOT IN ({placeholders})" if present else "1"
-        # Only listings that were notified: pending new ones are sent anyway
+        # Routed delivery also tracks never-delivered listings so stale new
+        # notices can be discarded. Legacy callers retain the old queue behavior.
         result.newly_missing = [
             row[0]
             for row in self._db.execute(
                 f"""
                 UPDATE listings SET missing_since = ?
-                WHERE {absent} AND notified_date IS NOT NULL
+                WHERE {absent} AND (notified_date IS NOT NULL OR ?)
                     AND missing_since IS NULL AND gone_since IS NULL
                 RETURNING listing_id
                 """,  # only placeholders are interpolated
-                (now, *present),
+                (now, *present, self.outbox is not None),
             ).fetchall()
         ]
         result.missing = len(result.newly_missing)
@@ -665,6 +715,8 @@ class ListingStore:
         now = int(time.time())
         with self._db:
             for item in listings:
+                if self.outbox is not None:
+                    self.outbox.record(item.listing_id)
                 updated = self._db.execute(
                     """
                     UPDATE listings SET notified_date = ?, filtered = 0, pending = NULL,
@@ -690,6 +742,8 @@ class ListingStore:
         now = int(time.time())
         with self._db:
             for item, reason in listings:
+                if self.outbox is not None:
+                    self.outbox.discard(item.listing_id)
                 updated = self._db.execute(
                     """
                     UPDATE listings SET notified_date = ?, pending = NULL,

@@ -8,6 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from shop_notify.db import EventSettings
 from shop_notify.filters import Filters
 from shop_notify.models import EVENTS
+from shop_notify.scheduling import Schedule, digest_groups
 
 
 class NotifySettings(BaseSettings):
@@ -44,6 +45,24 @@ class NotifySettings(BaseSettings):
     notify_images_max: int = Field(default=5, ge=1)
     # Above notify_images_max: attach the images to the summary message (Telegram album)
     notify_images_in_summary: bool = False
+
+    notify_quiet_hours: str = ""
+    notify_digest: str = ""
+    notify_digest_time: str = "08:00"
+    notify_digest_day: str = "mon"
+
+    @model_validator(mode="after")
+    def _check_schedule(self) -> Self:
+        self.schedule()
+        return self
+
+    def schedule(self) -> Schedule:
+        return Schedule(
+            groups=digest_groups(self.notify_digest),
+            quiet_hours=self.notify_quiet_hours,
+            time=self.notify_digest_time,
+            day=self.notify_digest_day,
+        )
 
     # Filters (see docs/filters.md): keywords are comma-separated, each regex is one
     # pattern (use | for alternatives); all are case-insensitive and match the title

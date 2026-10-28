@@ -100,6 +100,10 @@ All settings are read from `.env` in the working directory or from environment v
 | `NOTIFY_IMAGES` | `true` | Push/chat services get one message per new item with its picture |
 | `NOTIFY_IMAGES_MAX` | `5` | Up to this many new items per poll are sent individually; above, one summary message |
 | `NOTIFY_IMAGES_IN_SUMMARY` | `false` | Attach up to 10 pictures to the summary message (a Telegram album with `?album=yes`) |
+| `NOTIFY_QUIET_HOURS` | – | Optional local-time window, e.g. `22:00-07:00`; gates every target |
+| `NOTIFY_DIGEST` | – | Apprise recipient groups, e.g. `family:daily,oma:weekly`; untagged targets remain immediate |
+| `NOTIFY_DIGEST_TIME` | `08:00` | Local time of daily/weekly summaries |
+| `NOTIFY_DIGEST_DAY` | `mon` | Weekly digest day (`mon`–`sun`); see [scheduling](docs/notifications.md#quiet-hours-and-recipient-digests) |
 | `NOTIFY_EXCLUDE`, `NOTIFY_INCLUDE` | – | [Filters](#filters): keywords, comma-separated |
 | `NOTIFY_EXCLUDE_REGEX`, `NOTIFY_INCLUDE_REGEX` | – | [Filters](#filters): one regular expression each, in single quotes |
 | `NOTIFY_MIN_PRICE`, `NOTIFY_MAX_PRICE` | – | [Filters](#filters): price range |

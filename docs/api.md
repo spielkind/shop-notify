@@ -44,7 +44,7 @@ All responses are JSON. Times are UTC in ISO 8601 (`2026-10-26T11:54:15Z`); a `s
 Whether the database can be read, and the last poll:
 
 ```json
-{"status": "ok", "version": "1.7.0", "schema_version": 4,
+{"status": "ok", "version": "1.8.0", "schema_version": 5,
  "last_poll": {"id": 4711, "time": "2026-10-26T11:54:15Z", "reported": 124, "received": 124,
                "complete": true, "new": 0, "back": 0, "missing": 0, "gone": 0, "filtered": 0,
                "restocked": 0, "sold_out": 0, "error": null},

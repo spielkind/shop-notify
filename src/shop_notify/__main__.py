@@ -27,6 +27,7 @@ from shop_notify.notifications import (
     Notifier,
     Sender,
 )
+from shop_notify.scheduling import Schedule
 from shop_notify.systemd import SystemdNotifier
 
 log = logging.getLogger("shop_notify")
@@ -78,6 +79,7 @@ def build_notifier(settings: Settings) -> Notifier:
                     urls=urls,
                     config=settings.notify_config,
                     renderer=renderer,
+                    digest_groups=tuple(settings.schedule().groups),
                     **image_options(settings),
                 )
             )
@@ -284,6 +286,7 @@ def run_once(
     notify_existing: bool = False,
     forget_after_hours: float = 24,
     filters: Filters | None = None,
+    schedule: Schedule | None = None,
 ) -> int:
     """Poll once and send the queued notifications.
 
@@ -295,6 +298,10 @@ def run_once(
     they are notified once they pass (e.g. after a title change). Every poll is
     recorded, including failed ones.
     """
+    if schedule is not None and isinstance(
+        notifier, (AppriseNotifier, ConsoleNotifier, MultiNotifier)
+    ):
+        store.configure_delivery(notifier.routes, schedule)
     try:
         listings = list(client.active_listings(shop_id))
     except EtsyError as e:
@@ -319,7 +326,8 @@ def run_once(
     error = None
     try:
         if pending and first_run and not notify_existing:
-            notifier.notify(pending, initial=True)
+            if store.outbox is None or not store.outbox.schedule.quiet(time.time()):
+                notifier.notify(pending, initial=True)
             store.mark_as_notified(pending, sent=False)
             log.info(
                 "First run: %d existing item(s) recorded, "
@@ -327,6 +335,10 @@ def run_once(
                 len(pending),
             )
             return 0
+        if store.outbox is not None and isinstance(
+            notifier, (AppriseNotifier, ConsoleNotifier, MultiNotifier)
+        ):
+            return deliver_outbox(store, notifier, pending)
         if pending:
             notifier.notify(add_images(store, pending))
             store.mark_as_notified(pending)
@@ -347,6 +359,42 @@ def run_once(
             result=result,
             error=error,
         )
+
+
+def deliver_outbox(
+    store: ListingStore,
+    notifier: AppriseNotifier | ConsoleNotifier | MultiNotifier,
+    pending: Sequence[Listing],
+) -> int:
+    outbox = store.outbox
+    assert outbox is not None
+    store.queue_refiltered(pending)
+    now = time.time()
+    sent: set[int] = set()
+    failed = 0
+    batches = outbox.ready(now)
+    outbox.advance_slots(now)
+    for target, items in batches.items():
+        summary = outbox.routes[target] in outbox.schedule.groups or outbox.quiet_deferred(
+            target, items
+        )
+        if notifier.deliver(target, add_images(store, items), summary=summary):
+            outbox.acknowledge(target, items)
+            for item in items:
+                if item.listing_id not in sent:
+                    log.info("%s", describe_notice(item))
+                sent.add(item.listing_id)
+        else:
+            failed += 1
+    if not pending and not batches:
+        log.info("No new items this time")
+    else:
+        log.info("Notified %d item(s); remaining deliveries stay queued", len(sent))
+    if failed:
+        raise NotificationError(
+            f"Sending notifications failed for {failed} target(s); queued for retry"
+        )
+    return len(sent)
 
 
 def healthcheck(settings: Settings, now: float | None = None) -> int:
@@ -385,7 +433,9 @@ def wait_for_next_poll(stop: threading.Event, seconds: float, systemd: SystemdNo
 
 def run(settings: Settings) -> None:
     setup_logging(settings)
-    log.info("Shop Notify %s starting", __version__)
+    log.info(
+        "Shop Notify %s starting (time zone %s)", __version__, datetime.now().astimezone().tzname()
+    )
     notifier = build_notifier(settings)
     filters = load_filters(settings)
     systemd = SystemdNotifier()
@@ -422,6 +472,7 @@ def run(settings: Settings) -> None:
                         notify_existing=settings.notify_existing_on_first_run,
                         forget_after_hours=settings.forget_after_hours,
                         filters=filters,
+                        schedule=settings.schedule(),
                     )
                     settings.heartbeat_path.touch()
                     systemd.status(f"Last poll {_now()}: {new} new item(s){_quota_status(client)}")
@@ -492,6 +543,7 @@ def build_test_senders(settings: NotifySettings, url: str | None) -> tuple[list[
                     urls=urls,
                     config=settings.notify_config,
                     renderer=renderer,
+                    digest_groups=tuple(settings.schedule().groups),
                     **image_options(settings),
                 )
             )

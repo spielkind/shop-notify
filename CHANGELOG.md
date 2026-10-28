@@ -8,6 +8,26 @@ notation (e.g. `1.0.0rc1` for `1.0.0-rc.1`).
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-10-28
+
+### Added
+- Optional global quiet hours (`NOTIFY_QUIET_HOURS`) and daily/weekly recipient
+  digests using Apprise tags (`NOTIFY_DIGEST`, `NOTIFY_DIGEST_TIME`, `NOTIFY_DIGEST_DAY`)
+- Durable per-target outbox, per-group price baselines and digest slots (SQLite
+  schema v5), with automatic migration and backup; existing pending notices fan out
+  to configured groups without backfilling previously notified listings
+
+### Changed
+- Partial delivery failures retry only failed targets, including after restarts
+- Delayed notifications use current listing data; never-delivered new listings
+  that are now gone/sold out and obsolete price-change notices are discarded
+- Digests always use summary mode; untagged targets remain immediate outside quiet
+  hours, and first-run suppression remains unchanged
+
+### Fixed
+- Upgrading a v4 database no longer attempts to add its image columns again
+- Tagged Apprise services are explicitly selected for delivery
+
 ## [1.7.0] - 2026-10-28
 
 ### Added
@@ -293,7 +313,8 @@ until it has been verified against the real Etsy API with an approved key.
 
 Original version for the Etsy API v2 (never tagged).
 
-[Unreleased]: https://github.com/spielkind/shop-notify/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/spielkind/shop-notify/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/spielkind/shop-notify/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/spielkind/shop-notify/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/spielkind/shop-notify/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/spielkind/shop-notify/compare/v1.4.0...v1.5.0
