@@ -1,0 +1,9 @@
+*
+!package.json
+!package-lock.json
+!.npmrc
+!vite.config.ts
+!tsconfig.json
+!src/
+!static/
+**/*.test.ts

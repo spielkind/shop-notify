@@ -1,0 +1,17 @@
+# Caddy in front of Shop Notify's web UI (COMPOSE_PROFILES=caddy in .env): HTTPS with a
+# certificate from Let's Encrypt for UI_DOMAIN, renewed automatically - see docs/web-ui.md.
+# UI_DOMAIN must point to this server, and ports 80 and 443 must be reachable.
+{
+	acme_ca {$ACME_CA}
+	# Optional: an address for Let's Encrypt's account (it sends no expiry mails anymore)
+	# email you@example.com
+}
+
+{$UI_DOMAIN} {
+	encode zstd gzip
+	# Passes the host and the client address (X-Forwarded-For) on to the UI, which sets
+	# its own security headers
+	reverse_proxy {$UI_UPSTREAM:ui:3000}
+	header -Server
+	log
+}

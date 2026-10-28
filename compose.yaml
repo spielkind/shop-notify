@@ -27,13 +27,15 @@ services:
     cpus: 0.5
     pids_limit: 128
 
-  # Optional read-only JSON API of the history (docs/api.md), e.g. for a web UI:
+  # Optional read-only JSON API of the history (docs/api.md), also used by the web UI:
   #   docker compose --profile api up -d
   api:
     image: ghcr.io/spielkind/shop-notify:latest
     container_name: shop-notify-api
     profiles:
       - api
+      - ui
+      - caddy
     command: api
     # Only the database is needed: no .env with Etsy credentials or notification targets
     environment:
@@ -42,7 +44,9 @@ services:
       # The API opens the database read-only, but SQLite writes its -shm file next to
       # it, so the directory itself stays writable
       - ./data:/data
-    # No published ports: only other containers of this project can reach the API
+    # No published ports and no internet access: only the web UI can reach the API
+    networks:
+      - backend
     restart: unless-stopped
     healthcheck:
       test:
@@ -62,3 +66,91 @@ services:
     mem_limit: 128m
     cpus: 0.25
     pids_limit: 64
+
+  # Optional web UI of the history (docs/web-ui.md). Set UI_DOMAIN in .env, create an
+  # account with "docker compose exec ui shop-notify-ui set-password admin", and either
+  #   COMPOSE_PROFILES=caddy   with Caddy below for HTTPS (Let's Encrypt), or
+  #   COMPOSE_PROFILES=ui      behind your own nginx or Apache on 127.0.0.1:${UI_PORT}
+  ui:
+    image: ghcr.io/spielkind/shop-notify-ui:latest
+    container_name: shop-notify-ui
+    build: ui
+    profiles:
+      - ui
+      - caddy
+    environment:
+      UI_DOMAIN: ${UI_DOMAIN:-}
+      API_URL: http://api:8080
+      TZ: ${TZ:-UTC}
+      UI_LANGUAGE: ${UI_LANGUAGE:-en}
+      UI_SESSION_DAYS: ${UI_SESSION_DAYS:-30}
+      # The client address (for the limit of failed sign-ins) is the last entry the
+      # reverse proxy in front adds to X-Forwarded-For; more if there are several proxies
+      ADDRESS_HEADER: x-forwarded-for
+      XFF_DEPTH: ${UI_PROXY_DEPTH:-1}
+    volumes:
+      # Accounts and sessions; separate from the poller's database
+      - ./ui-data:/data
+    # Only reachable from this machine, for a reverse proxy on the host
+    ports:
+      - 127.0.0.1:${UI_PORT:-3000}:3000
+    networks:
+      - edge
+      - backend
+    depends_on:
+      - api
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+
+  # Optional HTTPS for the web UI with certificates from Let's Encrypt (Caddyfile)
+  caddy:
+    image: caddy:2.11.7-alpine@sha256:eb4d35b7452d1ab6171fbdbe8d9275b2301dad6dad92115d91e19fb9b24d510f
+    container_name: shop-notify-caddy
+    profiles:
+      - caddy
+    environment:
+      UI_DOMAIN: ${UI_DOMAIN:-}
+      # Use https://acme-staging-v02.api.letsencrypt.org/directory while trying it out
+      ACME_CA: ${ACME_CA:-https://acme-v02.api.letsencrypt.org/directory}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # The certificates: keep them, or Let's Encrypt's rate limits may be reached
+      - caddy-data:/data
+      - caddy-config:/config
+    ports:
+      - 80:80
+      - 443:443
+      - 443:443/udp
+    networks:
+      - edge
+    depends_on:
+      - ui
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+
+networks:
+  # Caddy and the web UI
+  edge: {}
+  # The web UI and the API, without internet access
+  backend:
+    internal: true
+
+volumes:
+  caddy-data: {}
+  caddy-config: {}
