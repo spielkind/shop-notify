@@ -235,6 +235,10 @@ shop-notify healthcheck                              # local
 docker compose exec shop-notify shop-notify healthcheck   # Docker
 ```
 
+## Documentation
+
+Setup, notifications, filters, events, the web UI, the API and the architecture are described in detail in **→ [the documentation](https://github.com/spielkind/shop-notify/blob/main/docs/README.md)**.
+
 ## FAQ
 
 <details>
