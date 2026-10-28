@@ -21,6 +21,8 @@
 #   9-11. the UI behind Caddy (the Caddyfile of the repository), nginx and Apache (the
 #      examples of docs/web-ui.md): sign in, the pages show the history, sign out
 #
+# The ports (18080-18088, 18443, 13000) don't clash with a real installation on the host.
+#
 # Usage: tests/e2e/run.sh [IMAGE] [UI_IMAGE]
 #   (default: shop-notify:ci shop-notify-ui:ci; needs docker, curl, jq, openssl, python3)
 set -euo pipefail
@@ -32,6 +34,11 @@ ETSY_PORT=18080
 SMTP_PORT=11025
 MAILPIT_API=http://localhost:18025/api/v1
 API_PORT=18081
+# Ports of the web UI and the proxies in front of it: not 3000, 80 and 443, so that the
+# test can run next to a real installation
+UI_PORT=${E2E_UI_PORT:-13000}
+HTTP_PORT=${E2E_HTTP_PORT:-18088}
+HTTPS_PORT=${E2E_HTTPS_PORT:-18443}
 API=http://localhost:$API_PORT/api
 DIR=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$DIR/../.." && pwd)
@@ -193,14 +200,14 @@ WORK=$(mktemp -d)
 docker run -d --name shop-notify-e2e-ui --network host --read-only --tmpfs /data:uid=1000,gid=1000 \
   --cap-drop ALL --security-opt no-new-privileges \
   -e UI_DOMAIN=localhost -e API_URL="http://127.0.0.1:$API_PORT" \
-  -e ADDRESS_HEADER=x-forwarded-for -e XFF_DEPTH=1 "$UI_IMAGE" >/dev/null
-wait_for 30 curl -sf http://127.0.0.1:3000/healthz || fail "UI did not start"
-[[ $(curl -s -H "Host: localhost" http://127.0.0.1:3000/login) == *"No account has been set up yet"* ]] \
+  -e PORT="$UI_PORT" -e ADDRESS_HEADER=x-forwarded-for -e XFF_DEPTH=1 "$UI_IMAGE" >/dev/null
+wait_for 30 curl -sf http://127.0.0.1:$UI_PORT/healthz || fail "UI did not start"
+[[ $(curl -s -H "Host: localhost" http://127.0.0.1:$UI_PORT/login) == *"No account has been set up yet"* ]] \
   || fail "no hint to create an account"
 printf '%s\n' "$UI_PASSWORD" \
   | docker exec -i shop-notify-e2e-ui shop-notify-ui set-password admin --password-stdin >/dev/null \
   || fail "account not created"
-[[ $(curl -s -o /dev/null -w '%{http_code}' -H "Host: evil.example" http://127.0.0.1:3000/login) == 421 ]] \
+[[ $(curl -s -o /dev/null -w '%{http_code}' -H "Host: evil.example" http://127.0.0.1:$UI_PORT/login) == 421 ]] \
   || fail "request for another host name answered"
 
 # A test certificate for localhost at the path of the examples (after the host name changed)
@@ -209,12 +216,18 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost \
   -addext subjectAltName=DNS:localhost -keyout "$WORK/certs/privkey.pem" \
   -out "$WORK/certs/fullchain.pem" 2>/dev/null
 chmod 644 "$WORK/certs/"*.pem
-# example LANGUAGE – the code block of docs/web-ui.md, for localhost instead of the placeholder
+# example LANGUAGE – the code block of docs/web-ui.md, for localhost and the ports of the
+# test instead of the placeholder and 80, 443 and 3000. nginx passes on the host name
+# with the port ($http_host), as the browser's origin then has one.
 example() {
-  sed -n "/^\`\`\`$1\$/,/^\`\`\`\$/p" "$ROOT/docs/web-ui.md" | sed '1d;$d' | sed 's/shop\.example\.com/localhost/g'
+  sed -n "/^\`\`\`$1\$/,/^\`\`\`\$/p" "$ROOT/docs/web-ui.md" | sed '1d;$d' | sed -E \
+    -e 's/shop\.example\.com/localhost/g' -e "s/127\.0\.0\.1:3000/127.0.0.1:$UI_PORT/g" \
+    -e "s/(listen (\[::\]:)?)443 /\1$HTTPS_PORT /; s/(listen (\[::\]:)?)80;/\1$HTTP_PORT;/" \
+    -e "s/\*:443>/*:$HTTPS_PORT>/; s/\*:80>/*:$HTTP_PORT>/" \
+    -e 's/(proxy_set_header Host )\$host;/\1$http_host;/'
 }
 
-UI=https://localhost
+UI=https://localhost:$HTTPS_PORT
 # ui_flow PROXY – sign in through the proxy, read the pages, sign out
 ui_flow() {
   local jar="$WORK/cookies" page="$WORK/page.html"
@@ -247,7 +260,8 @@ ui_flow() {
 echo "9. the web UI behind Caddy"
 docker run -d --name shop-notify-e2e-proxy --network host --read-only --tmpfs /data --tmpfs /config \
   --cap-drop ALL --cap-add NET_BIND_SERVICE --security-opt no-new-privileges \
-  -e UI_DOMAIN=localhost -e UI_UPSTREAM=127.0.0.1:3000 \
+  -e UI_DOMAIN=localhost -e UI_UPSTREAM="127.0.0.1:$UI_PORT" \
+  -e HTTP_PORT="$HTTP_PORT" -e HTTPS_PORT="$HTTPS_PORT" \
   -e ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory \
   -v "$ROOT/Caddyfile:/etc/caddy/Caddyfile:ro" "$CADDY" >/dev/null
 ui_flow Caddy
@@ -263,8 +277,9 @@ echo "11. the web UI behind Apache"
 example apache > "$WORK/shop-notify.conf"
 # what a2enmod does on Debian, for the official image
 docker run --rm "$HTTPD" cat /usr/local/apache2/conf/httpd.conf \
-  | sed -E 's/^#(LoadModule (ssl|socache_shmcb|proxy|proxy_http|headers)_module )/\1/' > "$WORK/httpd.conf"
-printf 'Listen 443\nInclude conf/extra/shop-notify.conf\n' >> "$WORK/httpd.conf"
+  | sed -E -e 's/^#(LoadModule (ssl|socache_shmcb|proxy|proxy_http|headers)_module )/\1/' \
+    -e "s/^Listen 80\$/Listen $HTTP_PORT/" > "$WORK/httpd.conf"
+printf 'Listen %s\nInclude conf/extra/shop-notify.conf\n' "$HTTPS_PORT" >> "$WORK/httpd.conf"
 docker run -d --name shop-notify-e2e-proxy --network host \
   -v "$WORK/httpd.conf:/usr/local/apache2/conf/httpd.conf:ro" \
   -v "$WORK/shop-notify.conf:/usr/local/apache2/conf/extra/shop-notify.conf:ro" \

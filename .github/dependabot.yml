@@ -42,11 +42,28 @@ updates:
     cooldown:
       default-days: 7
     groups:
+      # Packages that only work in matching versions are updated together, also for
+      # major versions
+      vitest:
+        patterns: [vitest, "@vitest/*"]
+      svelte:
+        patterns:
+          - svelte
+          - "@sveltejs/*"
+          - svelte-check
+          - prettier-plugin-svelte
+          - eslint-plugin-svelte
+      eslint:
+        patterns: [eslint, "@eslint/*", typescript-eslint, eslint-config-prettier]
       ui:
         update-types: [minor, patch]
       ui-security:
         applies-to: security-updates
         patterns: ["*"]
+    ignore:
+      # SvelteKit 3 needs TypeScript 6
+      - dependency-name: typescript
+        versions: [">=7"]
     commit-message:
       prefix: build
     labels: [dependencies]

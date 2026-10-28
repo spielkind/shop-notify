@@ -33,8 +33,8 @@ Apprise service (see `tests/conftest.py`).
 
 `tests/e2e/run.sh` tests the Docker images end to end against a fake Etsy API and
 [Mailpit](https://mailpit.axllent.org), including the web UI behind Caddy, nginx and
-Apache (needs Docker, jq and openssl, and ports 80, 443 and 3000; runs in CI for every
-build):
+Apache (needs Docker, jq and openssl; uses ports 18080–18088, 18443 and 13000, so it can
+run next to a real installation; runs in CI for every build):
 
 ```sh
 docker build -t shop-notify:ci . && docker build -t shop-notify-ui:ci ui && tests/e2e/run.sh
@@ -42,7 +42,7 @@ docker build -t shop-notify:ci . && docker build -t shop-notify-ui:ci ui && test
 
 ### Web UI
 
-The [web UI](docs/web-ui.md) in `ui/` needs Node.js 24 or newer:
+The [web UI](docs/web-ui.md) in `ui/` needs Node.js 26 or newer:
 
 ```sh
 cd ui
