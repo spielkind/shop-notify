@@ -8,6 +8,6 @@ bun.lockb
 # Miscellaneous
 /static/
 
-# Generated from docs/api.schema.json
+# Generated from docs/schema/api.schema.json
 src/lib/api-types.ts
 /coverage

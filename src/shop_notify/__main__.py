@@ -438,7 +438,7 @@ def run(settings: Settings) -> None:
 
 
 SAMPLE_IMAGE_URL = (
-    "https://raw.githubusercontent.com/spielkind/shop-notify/main/docs/sample-item.png"
+    "https://raw.githubusercontent.com/spielkind/shop-notify/main/docs/images/sample-item.png"
 )
 PROJECT_URL = "https://github.com/spielkind/shop-notify"
 

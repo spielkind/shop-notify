@@ -1,7 +1,7 @@
 {
 	"name": "shop-notify-ui",
 	"private": true,
-	"version": "1.6.0",
+	"version": "1.7.0",
 	"description": "Web UI for the history recorded by Shop Notify",
 	"license": "MIT",
 	"type": "module",
@@ -13,7 +13,7 @@
 		"build": "vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
-		"api-types": "json2ts --input ../docs/api.schema.json --output src/lib/api-types.ts --unreachableDefinitions --additionalProperties false --bannerComment \"// Generated from docs/api.schema.json by 'npm run api-types' - don't edit\"",
+		"api-types": "json2ts --input ../docs/schema/api.schema.json --output src/lib/api-types.ts --unreachableDefinitions --additionalProperties false --bannerComment \"// Generated from docs/schema/api.schema.json by 'npm run api-types' - don't edit\"",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"lint": "prettier --check . && eslint .",
 		"format": "prettier --write .",

@@ -1,6 +1,6 @@
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/spielkind/shop-notify/main/docs/banner-dark.svg">
-  <img alt="Shop Notify – get notified when new items appear in a shop" src="https://raw.githubusercontent.com/spielkind/shop-notify/main/docs/banner-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/spielkind/shop-notify/main/docs/images/banner-dark.svg">
+  <img alt="Shop Notify – get notified when new items appear in a shop" src="https://raw.githubusercontent.com/spielkind/shop-notify/main/docs/images/banner-light.svg">
 </picture>
 
 # Shop Notify
@@ -24,15 +24,15 @@ Shop Notify watches an Etsy shop and tells you – and anyone else you like – 
 ## How it works
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/spielkind/shop-notify/main/docs/how-it-works-dark.svg">
-  <img alt="Shop Notify polls the Etsy Open API, compares the active listings with its SQLite database and sends new items via Apprise to e-mail, push and chat services." src="https://raw.githubusercontent.com/spielkind/shop-notify/main/docs/how-it-works-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/spielkind/shop-notify/main/docs/images/how-it-works-dark.svg">
+  <img alt="Shop Notify polls the Etsy Open API, compares the active listings with its SQLite database and sends new items via Apprise to e-mail, push and chat services." src="https://raw.githubusercontent.com/spielkind/shop-notify/main/docs/images/how-it-works-light.svg">
 </picture>
 
 Every few minutes Shop Notify fetches the active listings of the shop from the [Etsy Open API v3](https://developers.etsy.com/documentation/) and compares them with the items it has already seen. Each new item is notified exactly once:
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/spielkind/shop-notify/main/docs/lifecycle-dark.svg">
-  <img alt="Lifecycle of a listing: New, then Notified once sent, then Gone once it has been gone from the shop for 24 hours; if it comes back it is notified as back in the shop. Failed notifications are retried with the next poll." src="https://raw.githubusercontent.com/spielkind/shop-notify/main/docs/lifecycle-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/spielkind/shop-notify/main/docs/images/lifecycle-dark.svg">
+  <img alt="Lifecycle of a listing: New, then Notified once sent, then Gone once it has been gone from the shop for 24 hours; if it comes back it is notified as back in the shop. Failed notifications are retried with the next poll." src="https://raw.githubusercontent.com/spielkind/shop-notify/main/docs/images/lifecycle-light.svg">
 </picture>
 
 ### First run
@@ -112,7 +112,7 @@ All settings are read from `.env` in the working directory or from environment v
 | `ETSY_API_ENDPOINT` | Etsy Open API v3 | Only needed for testing |
 | `TZ` | UTC | Docker only: time zone for dates in notifications and logs, e.g. `Europe/Berlin` (locally and with systemd the system time zone is used) |
 
-Only listing ID, title, URL, price and modification time are stored locally; vanished listings are deleted once they were notified.
+Locally, Shop Notify stores the public data of the shop's listings (title, URL, price, quantity, main image URLs and Etsy's timestamps), their history and the polls; listings are kept, polls are deleted after `POLL_HISTORY_DAYS`.
 
 ### Choosing the poll interval
 A new Etsy app may make **5,000 requests per day**. Every poll needs one request per 100 active listings, so stay above *35 s × pages* to use at most half of the quota:

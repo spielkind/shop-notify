@@ -1,6 +1,6 @@
 # Web UI
 
-A small web interface for the history that Shop Notify records: the last poll at a glance, the listings of the shop with their pictures, the events of all listings with filters, the polls, and every listing with its state and history. It only shows data – changing filters or settings is not part of it yet.
+A small web interface for the history that Shop Notify records: the last poll at a glance, the listings of the shop with their pictures (searchable and sortable by date, price, title or stock), the events of all listings with filters, the polls, and every listing with its state and history. It only shows data – changing filters or settings is not part of it yet.
 
 - **Optional:** the poller and the command line work as before without it.
 - **Signed in only:** one or more accounts, managed on the server with `shop-notify-ui`.

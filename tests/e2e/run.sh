@@ -196,6 +196,9 @@ check_api listings/1006 \
 check_api listings \
   '.counts.listed >= 4 and ([.listings[] | select(.image_url == null)] | length) == 0' \
   "listings without their images"
+check_api 'listings?sort=title' \
+  '[.listings[].listing.title] == ([.listings[].listing.title] | sort_by(ascii_downcase))' \
+  "listings not sorted by title"
 [[ $(curl -s -o /dev/null -w '%{http_code}' -X POST "$API/events") == 405 ]] \
   || fail "the API accepted a POST"
 
@@ -256,6 +259,8 @@ ui_flow() {
   grep -q 'class="card"' "$page" && grep -q "Handmade test item 6" "$page" \
     || fail "$1: no listing cards"
   grep -q 'aria-current="page">In the shop' "$page" || fail "$1: no status tabs"
+  curl -skf -b "$jar" "$UI/listings?sort=price_asc" | grep -q '<option value="price_asc" selected' \
+    || fail "$1: no sorting"
   curl -sk -b "$jar" -D - -o /dev/null "$UI/polls" | grep -qi "^content-security-policy: default-src 'none'" \
     || fail "$1: no Content-Security-Policy"
   [[ $(curl -sk -b "$jar" -o /dev/null -w '%{http_code}' -X POST -H "Origin: $UI" "$UI/logout") == 303 ]] \

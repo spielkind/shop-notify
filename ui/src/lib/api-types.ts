@@ -1,4 +1,4 @@
-// Generated from docs/api.schema.json by 'npm run api-types' - don't edit
+// Generated from docs/schema/api.schema.json by 'npm run api-types' - don't edit
 
 /**
  * Responses of the read-only API, schema version 4

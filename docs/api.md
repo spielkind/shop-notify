@@ -44,7 +44,7 @@ All responses are JSON. Times are UTC in ISO 8601 (`2026-10-26T11:54:15Z`); a `s
 Whether the database can be read, and the last poll:
 
 ```json
-{"status": "ok", "version": "1.6.0", "schema_version": 4,
+{"status": "ok", "version": "1.7.0", "schema_version": 4,
  "last_poll": {"id": 4711, "time": "2026-10-26T11:54:15Z", "reported": 124, "received": 124,
                "complete": true, "new": 0, "back": 0, "missing": 0, "gone": 0, "filtered": 0,
                "restocked": 0, "sold_out": 0, "error": null},
@@ -76,13 +76,14 @@ The [events](events.md) of all listings, newest first: `{"events": [...], "next"
 
 ### `GET /api/listings`
 
-The listings, the newest (first seen) first, with the number of listings per status: `{"listings": [...], "counts": {"listed": 125, "missing": 0, "sold_out": 3, "gone": 2}, "next": 1550875589}`. Each listing is like `listing` below.
+The listings, in the order `sort`, with the number of listings per status: `{"listings": [...], "counts": {"listed": 125, "missing": 0, "sold_out": 3, "gone": 2}, "next": 1550875589}`. Each listing is like `listing` below.
 
 | Parameter | Meaning |
 |---|---|
 | `status` | `listed` (in the shop, the default), `missing`, `sold_out`, `gone` or `all` |
 | `q` | Only listings whose title contains this text (ignoring the case of ASCII letters) |
-| `limit`, `before` | As for `/api/polls`; `before` is a listing ID |
+| `sort` | `newest` (first seen, the default), `oldest`, `price_asc`, `price_desc`, `title`, `changed` (last changed on Etsy) or `stock` (most in stock); ties are broken by the listing ID, listings without a price or quantity come last |
+| `limit`, `before` | As for `/api/polls`; `before` is a listing ID and only works with `sort=newest` (`400` otherwise) – for the other orders, ask for up to 500 at once |
 
 ### `GET /api/listings/{id}`
 
@@ -102,7 +103,7 @@ A listing with its latest state and all its events, newest first:
 
 ### Paging
 
-`next` is `null` on the last page. To get the following page, repeat the request with `before` set to `next` and the same filters:
+`next` is `null` on the last page. To get the following page, repeat the request with `before` set to `next` and the same filters (for `/api/listings` only in the order `newest`):
 
 ```sh
 curl 'http://127.0.0.1:8080/api/events?event=sold_out&limit=50'
@@ -123,8 +124,8 @@ The body is always `{"error": "…"}`, except for `/api/health`.
 
 ## Response schema
 
-[`api.schema.json`](api.schema.json) is the JSON schema of all responses, e.g. to generate types for a client. A test makes sure it matches the code; after changing a response, update it with:
+[`api.schema.json`](schema/api.schema.json) is the JSON schema of all responses, e.g. to generate types for a client. A test makes sure it matches the code; after changing a response, update it with:
 
 ```sh
-uv run python -m shop_notify.api > docs/api.schema.json
+uv run python -m shop_notify.api > docs/schema/api.schema.json
 ```

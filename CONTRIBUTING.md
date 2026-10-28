@@ -50,7 +50,7 @@ npm ci --ignore-scripts
 npm run check && npm run lint   # types (svelte-check), Prettier and ESLint
 npm test                        # unit tests of the server code and the pages (rendered with
                                 # svelte/server); kept at 100 % coverage
-npm run api-types               # after changing an API response (docs/api.schema.json)
+npm run api-types               # after changing an API response (docs/schema/api.schema.json)
 ```
 
 To try it, run the API (`uv run shop-notify api`), create an account with
@@ -71,10 +71,9 @@ To try it, run the API (`uv run shop-notify api`), create an account with
   (`feat: …`, `fix: …`, `docs: …`, `ci: …`, `chore: …`) – pull requests are squash-merged
   and the title becomes the commit message.
 
-CI must pass before merging: secret scan (gitleaks), lint (ruff, mypy, actionlint, zizmor, hadolint,
-typos), tests on all supported
-Python versions, dependency audit and the Docker build for amd64 and arm64 including the
-end-to-end test.
+CI must pass before merging: secret scan (gitleaks), lint (ruff, mypy, actionlint, zizmor,
+hadolint, typos), tests on all supported Python versions, dependency audit and the Docker
+build for amd64 and arm64 including the end-to-end test.
 
 ## Dependency updates
 
@@ -103,7 +102,7 @@ uv version --bump minor                 # or patch / major / rc; updates pyproje
 (cd ui && npm version --no-git-tag-version X.Y.Z)   # the web UI has the same version
 # CHANGELOG.md: rename "Unreleased" to "[X.Y.Z] - YYYY-MM-DD", add a new empty "Unreleased"
 git commit -am "chore(release): X.Y.Z"
-git tag -a vX.Y.Z -m "vX.Y.Z"           # SemVer notation, e.g. v1.0.0-rc.2
+git tag -s vX.Y.Z -m "vX.Y.Z"           # signed; SemVer notation, e.g. v1.0.0-rc.2
 git push --follow-tags
 ```
 
@@ -115,6 +114,7 @@ attestations; release candidates are only installed with `--pre`). The release g
 wheel, the source archive and a CycloneDX SBOM attached, all with a signed build provenance
 attestation (`gh attestation verify <file> --owner spielkind`); the Sigstore bundle of the
 attestation is attached as `shop-notify-<version>.sigstore.json` for offline verification
-(and as in-toto JSON lines, `shop-notify-<version>.intoto.jsonl`, for `slsa-verifier`). Releases are immutable on GitHub:
-once published, their tag and files can't be changed – fixes always need a new version. Release tags are
-protected and cannot be moved or deleted.
+(and as in-toto JSON lines, `shop-notify-<version>.intoto.jsonl`, for `slsa-verifier`).
+Releases are immutable on GitHub: once published, their tag and files can't be changed –
+fixes always need a new version. Release tags are protected and cannot be moved or
+deleted.

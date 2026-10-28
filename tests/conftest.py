@@ -13,7 +13,7 @@ from shop_notify.config import ApiSettings, Settings
 SENT: list[dict[str, Any]] = []
 
 # A local copy of the sample image, so that no test downloads anything
-SAMPLE_IMAGE = Path(__file__).parent.parent / "docs" / "sample-item.png"
+SAMPLE_IMAGE = Path(__file__).parent.parent / "docs" / "images" / "sample-item.png"
 
 
 @pytest.fixture(autouse=True)

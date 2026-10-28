@@ -44,6 +44,16 @@
 			placeholder={f.t.events.searchPlaceholder}
 		/>
 	</label>
+	<label>
+		{f.t.listings.sort}
+		<select name="sort">
+			{#each data.sorts as sort (sort)}
+				<option value={sort} selected={data.filter.sort === sort}
+					>{f.t.listings.sorts[sort]}</option
+				>
+			{/each}
+		</select>
+	</label>
 	<div class="buttons">
 		<button type="submit">{f.t.listings.apply}</button>
 	</div>
@@ -86,9 +96,6 @@
 	<p>{f.t.listings.none}</p>
 {/if}
 
-<p class="paging">
-	<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- only a query string for this page -->
-	{#if data.newest}<a href={data.newest}>← {f.t.listings.newest}</a>{/if}
-	<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- only a query string for this page -->
-	{#if data.older}<a href={data.older}>{f.t.listings.older} →</a>{/if}
-</p>
+{#if data.more}
+	<p class="muted">{f.t.listings.tooMany(data.listings.length)}</p>
+{/if}

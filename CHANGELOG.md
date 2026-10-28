@@ -8,6 +8,19 @@ notation (e.g. `1.0.0rc1` for `1.0.0-rc.1`).
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-10-28
+
+### Added
+- The listings in the web UI can be sorted by date (first seen or last changed),
+  price, title or stock; all listings of a status are shown on one page (up to 500)
+- The read-only API sorts the listings too (`/api/listings?sort=…`)
+
+### Changed
+- The pictures of the documentation are in `docs/images/`, the JSON schema of the
+  API is `docs/schema/api.schema.json`
+- Documentation brought up to date: what is stored locally, signed release tags,
+  the `sort` parameter
+
 ## [1.6.0] - 2026-10-28
 
 ### Added
@@ -280,7 +293,8 @@ until it has been verified against the real Etsy API with an approved key.
 
 Original version for the Etsy API v2 (never tagged).
 
-[Unreleased]: https://github.com/spielkind/shop-notify/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/spielkind/shop-notify/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/spielkind/shop-notify/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/spielkind/shop-notify/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/spielkind/shop-notify/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/spielkind/shop-notify/compare/v1.3.3...v1.4.0
