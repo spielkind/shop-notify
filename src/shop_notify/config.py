@@ -155,3 +155,15 @@ class Settings(NotifySettings):
     def heartbeat_max_age(self) -> float:
         """Seconds after which a missing heartbeat update counts as unhealthy."""
         return 2 * self.poll_interval + 60
+
+
+class ApiSettings(BaseSettings):
+    """Settings of the read-only API (``shop-notify api``); no Etsy credentials required."""
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    db_path: Path = Path("shop-notify.db")
+    log_level: str = "INFO"
+    # Only reachable from this machine by default; 0.0.0.0 in a container
+    api_host: str = "127.0.0.1"
+    api_port: int = Field(default=8080, ge=0, le=65535)

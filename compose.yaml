@@ -26,3 +26,39 @@ services:
     mem_limit: 256m
     cpus: 0.5
     pids_limit: 128
+
+  # Optional read-only JSON API of the history (docs/api.md), e.g. for a web UI:
+  #   docker compose --profile api up -d
+  api:
+    image: ghcr.io/spielkind/shop-notify:latest
+    container_name: shop-notify-api
+    profiles:
+      - api
+    command: api
+    # Only the database is needed: no .env with Etsy credentials or notification targets
+    environment:
+      API_HOST: 0.0.0.0
+    volumes:
+      # The API opens the database read-only, but SQLite writes its -shm file next to
+      # it, so the directory itself stays writable
+      - ./data:/data
+    # No published ports: only other containers of this project can reach the API
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request as u; u.urlopen('http://127.0.0.1:8080/api/health', timeout=5)
+      interval: 60s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 64

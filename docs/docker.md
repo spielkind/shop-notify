@@ -23,6 +23,7 @@ docker compose up -d
 - Update: `docker compose pull && docker compose up -d` · Build locally: `docker compose up -d --build`
 - Docker restarts a crashed container (`restart: unless-stopped`), but not an unhealthy one.
 - `compose.yaml` runs the container hardened: read-only root filesystem (only `./data` and a small `/tmp` tmpfs are writable), all Linux capabilities dropped, no privilege escalation, and memory/CPU/PID limits. The image already runs as a non-root user.
+- The optional [read-only API](api.md) of the history runs as a second container from the same image: `docker compose --profile api up -d`. It reads `./data`, gets no `.env` and publishes no port.
 
 ## Without Compose
 
@@ -50,6 +51,8 @@ To keep the items that were already seen (and skip the [first run](../README.md#
 scp shop-notify.db server:~/shop-notify/data/
 ssh server 'sudo chown -R 1000:1000 ~/shop-notify/data'
 ```
+
+Stop Shop Notify before copying its database: while it runs, recent changes can still be in `shop-notify.db-wal` next to it. When it stops, it writes them into the database file.
 
 Only run **one** instance per shop – two instances send every notification twice and share the API quota.
 

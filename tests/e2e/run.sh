@@ -14,6 +14,8 @@
 #      the sold-out state
 #   6. the sold-out listing is restocked with a single item: one "back in stock" mail
 #      (NOTIFY_EVENTS includes restocked)
+#   7. a second, hardened container serves the read-only API from the same database
+#      while the poller keeps running
 #
 # Usage: tests/e2e/run.sh [IMAGE]   (default: shop-notify:ci; needs docker, curl, jq, python3)
 set -euo pipefail
@@ -23,6 +25,8 @@ MAILPIT=axllent/mailpit:v1.31.6@sha256:23fe39e81bde596a918000b3135c0f85dc8bb4c9e
 ETSY_PORT=18080
 SMTP_PORT=11025
 MAILPIT_API=http://localhost:18025/api/v1
+API_PORT=18081
+API=http://localhost:$API_PORT/api
 DIR=$(cd "$(dirname "$0")" && pwd)
 
 cleanup() {
@@ -30,8 +34,10 @@ cleanup() {
   if ((status != 0)); then
     echo "--- shop-notify log ---"
     docker logs shop-notify-e2e 2>&1 | tail -40 || true
+    echo "--- API log ---"
+    docker logs shop-notify-e2e-api 2>&1 | tail -20 || true
   fi
-  docker rm -f shop-notify-e2e mailpit-e2e >/dev/null 2>&1 || true
+  docker rm -f shop-notify-e2e shop-notify-e2e-api mailpit-e2e >/dev/null 2>&1 || true
   [[ -n "${MAIL:-}" ]] && rm -f "$MAIL"
   [[ -n "${ETSY_PID:-}" ]] && kill "$ETSY_PID" 2>/dev/null
   exit "$status"
@@ -147,5 +153,21 @@ echo "   subject: $(jq -r .Subject "$MAIL")"
 check_mail '.Subject == "1 back in stock in TestShop"' "unexpected subject"
 check_mail '.HTML | contains("Back in stock")' "back-in-stock badge missing"
 check_mail '.HTML | contains("sold out for") and contains("only 1 left")' "details missing"
+
+echo "7. the read-only API serves the history from a second, hardened container"
+# same image and database volume as the poller; both use the database at the same time
+docker run -d --name shop-notify-e2e-api --network host --volumes-from shop-notify-e2e \
+  --read-only --cap-drop ALL --security-opt no-new-privileges \
+  -e API_PORT="$API_PORT" "$IMAGE" api >/dev/null
+wait_for 30 curl -sf "$API/health" || fail "API not healthy"
+check_api() { curl -sf "$API/$1" | jq -e "$2" >/dev/null || fail "$3"; }
+check_api health '.status == "ok" and .last_poll.error == null' "no successful last poll"
+check_api 'events?event=sold_out' '[.events[].listing_id] | index(1006) != null' \
+  "sold-out event missing"
+check_api listings/1006 \
+  '.listing.status == "listed" and ([.events[].event] | index("restocked") != null)' \
+  "restocked listing not shown as listed"
+[[ $(curl -s -o /dev/null -w '%{http_code}' -X POST "$API/events") == 405 ]] \
+  || fail "the API accepted a POST"
 
 echo "OK"

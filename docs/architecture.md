@@ -2,7 +2,8 @@
 
 Shop Notify is a single, long-running Python process. It polls the Etsy Open API,
 remembers which listings it has seen in a local SQLite database and sends new ones to
-notification services via [Apprise](https://github.com/caronc/apprise).
+notification services via [Apprise](https://github.com/caronc/apprise). Optionally, a
+second process serves the recorded history as a [read-only JSON API](api.md).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="how-it-works-dark.svg">
@@ -15,7 +16,8 @@ All modules are in [`src/shop_notify/`](../src/shop_notify):
 
 | Module | Responsibility |
 |---|---|
-| `__main__.py` | Command line (`run`, `healthcheck`, `test-notify`, `history`, `check-filters`), logging, the poll loop (`run_once`), first-run handling, quota warning, signal handling |
+| `__main__.py` | Command line (`run`, `healthcheck`, `test-notify`, `history`, `check-filters`, `api`), logging, the poll loop (`run_once`), first-run handling, quota warning, signal handling |
+| `api.py` | Read-only JSON API of the history (`shop-notify api`, see [api.md](api.md)): a small HTTP server from the standard library; every request opens the database read-only |
 | `config.py` | Settings from environment variables and `.env` ([pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)); credentials are `SecretStr` and never printed |
 | `etsy.py` | `EtsyClient`: HTTP client for the Etsy Open API v3 ([httpx](https://www.python-httpx.org/)) with pagination, retries when rate limited, quota tracking; validates every response |
 | `models.py` | `Listing` and `Money` – the only listing fields that are used and stored |
@@ -67,6 +69,12 @@ The life cycle of a listing:
 
 A single SQLite file (`DB_PATH`). Listings are never deleted, events are only appended;
 polls are kept for `POLL_HISTORY_DAYS`. `shop-notify history` shows the content.
+
+The poller is the only process that writes to the database. It uses SQLite's
+[write-ahead log](https://www.sqlite.org/wal.html), so that the [API](api.md) can read
+while the poller writes, without either waiting for the other. While the database is in
+use, the files `-wal` and `-shm` lie next to it; the write-ahead log doesn't work on
+network file systems such as NFS or SMB.
 
 ```mermaid
 erDiagram
@@ -141,8 +149,10 @@ and the poll counts `restocked` and `sold_out`.
 | Images (Etsy CDN, HTTPS) | in | listing pictures | **untrusted** |
 | Notification services (SMTP, Telegram, ntfy, … via Apprise) | out | rendered messages and images | trusted with the content of the notifications |
 | SQLite database, heartbeat and log file | local | listing IDs and fields above; no credentials | local file system of the operator |
+| Optional [read-only API](api.md) (HTTP, `127.0.0.1:8080` by default) | in | GET requests; answers with the history from the database | **untrusted** requests – no authentication, so only for the same machine or a private network |
 
-The process opens no network ports and needs no inbound connections.
+The poller opens no network ports and needs no inbound connections; only the optional API
+listens on one.
 
 ## Deployment
 

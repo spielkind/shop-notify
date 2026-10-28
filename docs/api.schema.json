@@ -1,0 +1,505 @@
+{
+  "$defs": {
+    "Error": {
+      "properties": {
+        "error": {
+          "title": "Error",
+          "type": "string"
+        }
+      },
+      "required": [
+        "error"
+      ],
+      "title": "Error",
+      "type": "object"
+    },
+    "Event": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "integer"
+        },
+        "listing_id": {
+          "title": "Listing Id",
+          "type": "integer"
+        },
+        "time": {
+          "format": "date-time",
+          "title": "Time",
+          "type": "string"
+        },
+        "event": {
+          "title": "Event",
+          "type": "string"
+        },
+        "details": {
+          "additionalProperties": true,
+          "title": "Details",
+          "type": "object"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "listing_id",
+        "time",
+        "event",
+        "details",
+        "title"
+      ],
+      "title": "Event",
+      "type": "object"
+    },
+    "EventPage": {
+      "properties": {
+        "events": {
+          "items": {
+            "$ref": "#/$defs/Event"
+          },
+          "title": "Events",
+          "type": "array"
+        },
+        "next": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Next"
+        }
+      },
+      "required": [
+        "events",
+        "next"
+      ],
+      "title": "EventPage",
+      "type": "object"
+    },
+    "Health": {
+      "properties": {
+        "status": {
+          "title": "Status",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        },
+        "schema_version": {
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "last_poll": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Poll"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error"
+        }
+      },
+      "required": [
+        "status",
+        "version",
+        "schema_version",
+        "last_poll"
+      ],
+      "title": "Health",
+      "type": "object"
+    },
+    "Listing": {
+      "description": "Subset of an Etsy v3 ShopListing; only these fields are stored locally.",
+      "properties": {
+        "listing_id": {
+          "title": "Listing Id",
+          "type": "integer"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "url": {
+          "title": "Url",
+          "type": "string"
+        },
+        "last_modified_timestamp": {
+          "title": "Last Modified Timestamp",
+          "type": "integer"
+        },
+        "state_timestamp": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "State Timestamp"
+        },
+        "created_timestamp": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Created Timestamp"
+        },
+        "original_creation_timestamp": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Original Creation Timestamp"
+        },
+        "price": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Money"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "quantity": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Quantity"
+        },
+        "image_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Image Url"
+        }
+      },
+      "required": [
+        "listing_id",
+        "title",
+        "url",
+        "last_modified_timestamp"
+      ],
+      "title": "Listing",
+      "type": "object"
+    },
+    "ListingDetail": {
+      "properties": {
+        "listing": {
+          "$ref": "#/$defs/StoredListing"
+        },
+        "events": {
+          "items": {
+            "$ref": "#/$defs/Event"
+          },
+          "title": "Events",
+          "type": "array"
+        }
+      },
+      "required": [
+        "listing",
+        "events"
+      ],
+      "title": "ListingDetail",
+      "type": "object"
+    },
+    "Money": {
+      "properties": {
+        "amount": {
+          "title": "Amount",
+          "type": "integer"
+        },
+        "divisor": {
+          "title": "Divisor",
+          "type": "integer"
+        },
+        "currency_code": {
+          "title": "Currency Code",
+          "type": "string"
+        }
+      },
+      "required": [
+        "amount",
+        "divisor",
+        "currency_code"
+      ],
+      "title": "Money",
+      "type": "object"
+    },
+    "Poll": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "integer"
+        },
+        "time": {
+          "format": "date-time",
+          "title": "Time",
+          "type": "string"
+        },
+        "reported": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reported"
+        },
+        "received": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Received"
+        },
+        "complete": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Complete"
+        },
+        "new": {
+          "title": "New",
+          "type": "integer"
+        },
+        "back": {
+          "title": "Back",
+          "type": "integer"
+        },
+        "missing": {
+          "title": "Missing",
+          "type": "integer"
+        },
+        "gone": {
+          "title": "Gone",
+          "type": "integer"
+        },
+        "filtered": {
+          "title": "Filtered",
+          "type": "integer"
+        },
+        "restocked": {
+          "title": "Restocked",
+          "type": "integer"
+        },
+        "sold_out": {
+          "title": "Sold Out",
+          "type": "integer"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Error"
+        }
+      },
+      "required": [
+        "id",
+        "time",
+        "reported",
+        "received",
+        "complete",
+        "new",
+        "back",
+        "missing",
+        "gone",
+        "filtered",
+        "restocked",
+        "sold_out",
+        "error"
+      ],
+      "title": "Poll",
+      "type": "object"
+    },
+    "PollPage": {
+      "properties": {
+        "polls": {
+          "items": {
+            "$ref": "#/$defs/Poll"
+          },
+          "title": "Polls",
+          "type": "array"
+        },
+        "next": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Next"
+        }
+      },
+      "required": [
+        "polls",
+        "next"
+      ],
+      "title": "PollPage",
+      "type": "object"
+    },
+    "StoredListing": {
+      "description": "The latest state of a listing as recorded in the database.",
+      "properties": {
+        "listing": {
+          "$ref": "#/$defs/Listing"
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        },
+        "first_seen": {
+          "format": "date-time",
+          "title": "First Seen",
+          "type": "string"
+        },
+        "last_seen": {
+          "format": "date-time",
+          "title": "Last Seen",
+          "type": "string"
+        },
+        "missing_since": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Missing Since"
+        },
+        "gone_since": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Gone Since"
+        },
+        "sold_out_since": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Sold Out Since"
+        },
+        "notified": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Notified"
+        },
+        "filtered": {
+          "title": "Filtered",
+          "type": "boolean"
+        },
+        "pending": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Pending"
+        }
+      },
+      "required": [
+        "listing",
+        "status",
+        "first_seen",
+        "last_seen",
+        "missing_since",
+        "gone_since",
+        "sold_out_since",
+        "notified",
+        "filtered",
+        "pending"
+      ],
+      "title": "StoredListing",
+      "type": "object"
+    }
+  },
+  "title": "Shop Notify API",
+  "description": "Responses of the read-only API, schema version 3"
+}

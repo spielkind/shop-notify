@@ -1,4 +1,8 @@
+import shutil
 import sqlite3
+import subprocess
+import sys
+import time
 from collections.abc import Iterator, Sequence
 from contextlib import AbstractContextManager
 from pathlib import Path
@@ -7,7 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
-from shop_notify.db import SCHEMA_VERSION, Event, ListingStore
+from shop_notify.db import SCHEMA_VERSION, DatabaseUnavailableError, Event, ListingStore
 from shop_notify.models import Listing, Money
 from tests.helpers import make_listing, sync
 
@@ -345,3 +349,204 @@ def test_migrates_a_database_from_version_1_1(tmp_path: Path) -> None:
         result = sync(store, [make_listing(1)])
     assert (result.pending, result.refilter) == ([], [])
     store.close()
+
+
+# --- concurrent access and the read-only mode ------------------------------------
+
+
+def test_a_file_database_uses_the_write_ahead_log(tmp_path: Path) -> None:
+    path = tmp_path / "shop-notify.db"
+    ListingStore(path).close()
+    db = sqlite3.connect(path)
+    assert db.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+    db.close()
+    # nothing is left next to the database once it is closed
+    assert [p.name for p in tmp_path.iterdir()] == ["shop-notify.db"]
+
+
+def test_closing_writes_the_log_into_the_database_file(tmp_path: Path) -> None:
+    path = tmp_path / "shop-notify.db"
+    store = ListingStore(path)
+    # an open reader (the API) keeps SQLite from doing this by itself
+    reader = ListingStore(path, readonly=True)
+    sync(store, [make_listing(1)])
+    store.close()
+    shutil.copyfile(path, tmp_path / "copy.db")
+    reader.close()
+    copy = sqlite3.connect(tmp_path / "copy.db")
+    assert copy.execute("SELECT listing_id FROM listings").fetchall() == [(1,)]
+    copy.close()
+
+
+def test_the_migration_backup_includes_the_write_ahead_log(tmp_path: Path) -> None:
+    path = tmp_path / "shop-notify.db"
+    old = sqlite3.connect(path)
+    old.execute("PRAGMA journal_mode = WAL")
+    old.execute("PRAGMA wal_autocheckpoint = 0")
+    old.execute(
+        "CREATE TABLE listings (listing_id INTEGER PRIMARY KEY, request_date INTEGER NOT NULL, "
+        "notified_date INTEGER, result TEXT)"
+    )
+    old.commit()
+    # while another connection is open, closing doesn't move the log into the database
+    other = sqlite3.connect(path)
+    other.execute("SELECT * FROM listings").fetchall()
+    old.execute(
+        "INSERT INTO listings VALUES (1, 100, 100, ?)", (make_listing(1).model_dump_json(),)
+    )
+    old.commit()
+    old.close()
+    assert (tmp_path / "shop-notify.db-wal").stat().st_size > 0
+
+    ListingStore(path).close()
+    other.close()
+    backup = sqlite3.connect(tmp_path / "shop-notify.db.bak-v0")
+    assert backup.execute("SELECT listing_id FROM listings").fetchall() == [(1,)]
+    backup.close()
+
+
+def test_a_readonly_store_needs_an_existing_database(tmp_path: Path) -> None:
+    path = tmp_path / "shop-notify.db"
+    with pytest.raises(DatabaseUnavailableError, match=r"No database at .*shop-notify\.db"):
+        ListingStore(path, readonly=True)
+    assert not path.exists()
+
+
+@pytest.mark.parametrize("version", [0, SCHEMA_VERSION - 1, SCHEMA_VERSION + 1])
+def test_a_readonly_store_needs_the_current_schema(tmp_path: Path, version: int) -> None:
+    path = tmp_path / "shop-notify.db"
+    db = sqlite3.connect(path)
+    db.execute(f"PRAGMA user_version = {version}")
+    db.close()
+    with pytest.raises(DatabaseUnavailableError, match=f"schema version {version}, but"):
+        ListingStore(path, readonly=True)
+    # nothing was migrated
+    db = sqlite3.connect(path)
+    assert db.execute("PRAGMA user_version").fetchone()[0] == version
+    db.close()
+
+
+def test_a_readonly_store_reports_a_file_that_is_no_database(tmp_path: Path) -> None:
+    path = tmp_path / "shop-notify.db"
+    path.write_text("not a database" * 100)
+    with pytest.raises(DatabaseUnavailableError, match=r"Can't read .*not a database"):
+        ListingStore(path, readonly=True)
+
+
+def test_a_readonly_store_reads_but_never_writes(tmp_path: Path) -> None:
+    path = tmp_path / "shop-notify.db"
+    with ListingStore(path) as store:
+        sync(store, [make_listing(1)])
+    with ListingStore(path, readonly=True) as reader:
+        assert events(reader) == [(1, "new")]
+        with pytest.raises(sqlite3.OperationalError, match="readonly"):
+            reader.record_poll(error="x")
+
+
+def test_readers_are_not_blocked_while_the_poller_writes(tmp_path: Path) -> None:
+    path = tmp_path / "shop-notify.db"
+    with ListingStore(path) as store:
+        sync(store, [make_listing(1)])
+    # an exclusive write transaction blocks readers unless the database uses the WAL
+    writer = sqlite3.connect(path, isolation_level=None)
+    writer.execute("BEGIN EXCLUSIVE")
+    writer.execute("INSERT INTO polls (time) VALUES (1)")
+    reader = (
+        "import sys; from shop_notify.db import ListingStore\n"
+        "with ListingStore(sys.argv[1], readonly=True) as store:\n"
+        "    print(len(store.events()), len(store.polls()))\n"
+    )
+    started = time.monotonic()
+    done = subprocess.run(
+        [sys.executable, "-c", reader, str(path)], capture_output=True, text=True, check=True
+    )
+    writer.execute("COMMIT")
+    writer.close()
+    # the reader sees the last committed state without waiting for the writer
+    assert done.stdout.split() == ["1", "0"]
+    assert time.monotonic() - started < 4
+
+
+# --- listings, paging and filtering ----------------------------------------------
+
+
+def test_listing_state(store: ListingStore) -> None:
+    with at(100):
+        store.mark_as_notified(sync(store, [make_listing(1), make_listing(2)]).pending)
+    assert store.listing(3) is None
+    listed = store.listing(1)
+    assert listed is not None
+    assert (listed.status, listed.listing.title, listed.pending) == ("listed", "Item 1", None)
+    assert listed.first_seen.timestamp() == 100
+    assert listed.notified is not None and listed.notified.timestamp() == 100
+    assert listed.missing_since is None
+
+    with at(200):
+        result = store.sync([make_listing(2)])
+        store.record_states({1: "sold_out"}, result)
+    sold_out = store.listing(1)
+    assert sold_out is not None
+    assert (sold_out.status, sold_out.pending) == ("sold_out", None)
+    assert sold_out.sold_out_since is not None and sold_out.sold_out_since.timestamp() == 200
+
+    # 1 hasn't been seen for longer than forget_after, 2 is only missing
+    with at(300):
+        store.sync([], forget_after=150)
+    gone, missing = store.listing(1), store.listing(2)
+    assert gone is not None and gone.gone_since is not None
+    assert missing is not None and missing.missing_since is not None
+    assert (gone.status, missing.status) == ("gone", "missing")
+
+    with at(400):
+        result = store.sync([make_listing(3)])
+        store.mark_as_filtered([(item, "x") for item in store.pending()])
+        store.sync([make_listing(3), make_listing(4)])
+    filtered, new = store.listing(3), store.listing(4)
+    assert filtered is not None and filtered.filtered
+    assert new is not None and new.pending == "new"
+
+
+def test_events_can_be_filtered_and_paged(store: ListingStore) -> None:
+    with at(100):
+        store.mark_as_notified(
+            sync(store, [make_listing(1, "Silver ring"), make_listing(2, "Mug 50%_off")]).pending
+        )
+    with at(200):
+        store.record_states({1: "sold_out"}, store.sync([make_listing(2, "Mug 50%_off")]))
+
+    newest = store.events(newest_first=True)
+    assert [(e.listing_id, e.event) for e in newest] == [
+        (1, "sold_out"),
+        (2, "notified"),
+        (1, "notified"),
+        (2, "new"),
+        (1, "new"),
+    ]
+    assert [e.id for e in newest] == sorted((e.id for e in newest), reverse=True)
+
+    def titles(**kwargs: Any) -> list[int]:
+        return ids(store.events(**kwargs))
+
+    assert titles(kinds=["sold_out", "new"]) == [1, 2, 1]
+    assert titles(text="SILVER") == [1, 1, 1]
+    # LIKE wildcards in the search text match literally
+    assert titles(text="50%_") == [2, 2]
+    assert titles(text="%") == [2, 2]
+    assert titles(text="r_ng") == []
+
+    first = store.events(newest_first=True, limit=2)
+    second = store.events(newest_first=True, limit=2, before=first[-1].id)
+    rest = store.events(newest_first=True, limit=2, before=second[-1].id)
+    assert [*first, *second, *rest] == newest
+    assert store.events(before=999) == []
+
+
+def test_polls_can_be_paged_newest_first(store: ListingStore) -> None:
+    for second in (100, 200, 300):
+        with at(second):
+            store.record_poll(error=str(second))
+    newest = store.polls(newest_first=True)
+    assert [p.error for p in newest] == ["300", "200", "100"]
+    page = store.polls(newest_first=True, limit=2)
+    assert [p.error for p in store.polls(newest_first=True, before=page[-1].id)] == ["100"]
+    assert [p.error for p in store.polls(since=200)] == ["200", "300"]

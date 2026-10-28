@@ -222,6 +222,8 @@ docker compose exec shop-notify shop-notify history   # in Docker
 
 Nothing before the first run is known (Etsy has no history), and changes are only noticed at the next poll. The database layout is described in [docs/architecture.md](https://github.com/spielkind/shop-notify/blob/main/docs/architecture.md#database).
 
+The history is also available as JSON from an optional, read-only API (`shop-notify api`, or `docker compose --profile api up -d`). **→ [Read-only API](https://github.com/spielkind/shop-notify/blob/main/docs/api.md)**
+
 ### Health check
 After every successful poll Shop Notify touches a heartbeat file. `shop-notify healthcheck` exits with `0` if the last successful poll is younger than `2 × POLL_INTERVAL + 60 s`, otherwise with `1` – e.g. when Etsy rejects the API key or the network is down. Docker uses it for its health status; manually:
 

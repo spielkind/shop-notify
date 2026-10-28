@@ -11,15 +11,16 @@ Schema version 3 (see ``docs/architecture.md`` for a diagram):
 
 import json
 import logging
-import shutil
 import sqlite3
 import time
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Sequence
+from contextlib import closing, suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from types import TracebackType
+from typing import Any, Self
 
 from shop_notify.models import DEFAULT_EVENTS, EVENTS, Listing, Money, Notice
 
@@ -107,8 +108,13 @@ class SyncResult:
     filtered: int = 0
 
 
+class DatabaseUnavailableError(Exception):
+    """The database can't be read: it doesn't exist yet or has another schema version."""
+
+
 @dataclass(frozen=True)
 class Event:
+    id: int
     listing_id: int
     time: datetime
     event: str
@@ -118,6 +124,7 @@ class Event:
 
 @dataclass(frozen=True)
 class Poll:
+    id: int
     time: datetime
     reported: int | None
     received: int | None
@@ -132,8 +139,50 @@ class Poll:
     error: str | None
 
 
+@dataclass(frozen=True)
+class StoredListing:
+    """The latest state of a listing as recorded in the database."""
+
+    listing: Listing
+    status: str
+    """``listed``, ``missing``, ``sold_out`` or ``gone``."""
+    first_seen: datetime
+    last_seen: datetime
+    missing_since: datetime | None
+    gone_since: datetime | None
+    sold_out_since: datetime | None
+    notified: datetime | None
+    """When it was last notified, or filtered out if ``filtered`` is set."""
+    filtered: bool
+    pending: str | None
+    """The event of a notification waiting to be sent."""
+
+
 def _ts(value: int) -> datetime:
     return datetime.fromtimestamp(value, tz=UTC)
+
+
+def _optional_ts(value: int | None) -> datetime | None:
+    return None if value is None else _ts(value)
+
+
+def _open_readonly(path: Path | str) -> sqlite3.Connection:
+    path = Path(path)
+    if not path.is_file():
+        raise DatabaseUnavailableError(f"No database at {path} - has Shop Notify run yet?")
+    db = sqlite3.connect(f"{path.absolute().as_uri()}?mode=ro", uri=True)
+    try:
+        version = db.execute("PRAGMA user_version").fetchone()[0]
+    except sqlite3.DatabaseError as e:
+        db.close()
+        raise DatabaseUnavailableError(f"Can't read {path}: {e}") from e
+    if version != SCHEMA_VERSION:
+        db.close()
+        raise DatabaseUnavailableError(
+            f"Database {path} has schema version {version}, but this version of Shop Notify "
+            f"reads version {SCHEMA_VERSION}"
+        )
+    return db
 
 
 def _money(value: str | None) -> Money | None:
@@ -147,7 +196,11 @@ def _percent(new: Money, old: Money) -> Decimal | None:
 
 
 class ListingStore:
-    """Persists the listings of a shop, their history and the polls."""
+    """Persists the listings of a shop, their history and the polls.
+
+    With ``readonly=True`` the database is only read (for the API): it must exist and have
+    the current schema version, and is never migrated or changed.
+    """
 
     def __init__(
         self,
@@ -155,21 +208,44 @@ class ListingStore:
         *,
         poll_history_days: float = 14,
         events: EventSettings | None = None,
+        readonly: bool = False,
     ) -> None:
         self._poll_history = poll_history_days * 86400
         self.events_settings = events or EventSettings()
         self.last_state_lookup_error: str | None = None
         """The last Etsy state-lookup error, to avoid repeating the warning every poll."""
+        self._readonly = readonly
+        if readonly:
+            self._db = _open_readonly(path)
+            return
         self._db = sqlite3.connect(path)
         self._db.execute("PRAGMA foreign_keys = ON")
         try:
             self._migrate(path)
+            # Readers (the API) and the poller don't block each other
+            self._db.execute("PRAGMA journal_mode = WAL")
         except BaseException:
             self._db.close()
             raise
 
     def close(self) -> None:
+        if not self._readonly:
+            # Write the log into the database file, so that the file alone is complete
+            # once the poller has stopped - SQLite skips this while a reader is open
+            with suppress(sqlite3.Error):
+                self._db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         self._db.close()
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        self.close()
 
     # -- schema ---------------------------------------------------------------
 
@@ -186,7 +262,9 @@ class ListingStore:
         if columns and str(path) != ":memory:":
             backup = Path(f"{path}.bak-v{version}")
             log.info("Upgrading database schema to version %d, backup: %s", SCHEMA_VERSION, backup)
-            shutil.copyfile(path, backup)
+            # SQLite's backup also copies changes that are still in the write-ahead log
+            with closing(sqlite3.connect(backup)) as copy:
+                self._db.backup(copy)
         legacy = columns == _LEGACY_COLUMNS
         with self._db:
             if legacy:
@@ -600,9 +678,25 @@ class ListingStore:
 
     # -- history --------------------------------------------------------------
 
-    def events(self, *, listing_id: int | None = None, since: float = 0) -> list[Event]:
+    def events(
+        self,
+        *,
+        listing_id: int | None = None,
+        since: float = 0,
+        kinds: Collection[str] = (),
+        text: str | None = None,
+        before: int | None = None,
+        limit: int | None = None,
+        newest_first: bool = False,
+    ) -> list[Event]:
+        """The recorded events, oldest first unless ``newest_first``.
+
+        ``kinds`` keeps only these events, ``text`` those of listings whose title contains
+        it (ignoring the case of ASCII letters). ``before`` keeps the events older than the
+        event with this ID, to page through them ``limit`` at a time.
+        """
         query = """
-            SELECT e.listing_id, e.time, e.event, e.details, l.result
+            SELECT e.id, e.listing_id, e.time, e.event, e.details, l.result
             FROM listing_events e JOIN listings l USING (listing_id)
             WHERE e.time >= ?
         """
@@ -610,17 +704,66 @@ class ListingStore:
         if listing_id is not None:
             query += " AND e.listing_id = ?"
             params.append(listing_id)
-        query += " ORDER BY e.time, e.id"
+        if kinds:
+            # only placeholders are interpolated, here and for the sort order below
+            query += f" AND e.event IN ({','.join('?' * len(kinds))})"
+            params += kinds
+        if text:
+            query += r" AND json_extract(l.result, '$.title') LIKE ? ESCAPE '\'"
+            params.append(f"%{_escape_like(text)}%")
+        if before is not None:
+            query += " AND (e.time, e.id) < (SELECT time, id FROM listing_events WHERE id = ?)"
+            params.append(before)
+        order = "DESC" if newest_first else "ASC"
+        query += f" ORDER BY e.time {order}, e.id {order}"
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(limit)
         return [
             Event(
-                listing_id=row[0],
-                time=_ts(row[1]),
-                event=row[2],
-                details=json.loads(row[3]) if row[3] else {},
-                title=Listing.model_validate_json(row[4]).title,
+                id=row[0],
+                listing_id=row[1],
+                time=_ts(row[2]),
+                event=row[3],
+                details=json.loads(row[4]) if row[4] else {},
+                title=Listing.model_validate_json(row[5]).title,
             )
             for row in self._db.execute(query, params)
         ]
+
+    def listing(self, listing_id: int) -> StoredListing | None:
+        """The latest recorded state of a listing, or None if it isn't known."""
+        row = self._db.execute(
+            """
+            SELECT result, first_seen, last_seen, missing_since, gone_since, sold_out_since,
+                   notified_date, filtered, pending
+            FROM listings WHERE listing_id = ?
+            """,
+            (listing_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        result, first_seen, last_seen, missing, gone, sold_out, notified, filtered, pending = row
+        if gone is not None:
+            status = "gone"
+        elif sold_out is not None:
+            status = "sold_out"
+        elif missing is not None:
+            status = "missing"
+        else:
+            status = "listed"
+        return StoredListing(
+            listing=Listing.model_validate_json(result),
+            status=status,
+            first_seen=_ts(first_seen),
+            last_seen=_ts(last_seen),
+            missing_since=_optional_ts(missing),
+            gone_since=_optional_ts(gone),
+            sold_out_since=_optional_ts(sold_out),
+            notified=_optional_ts(notified),
+            filtered=bool(filtered),
+            pending=Notice.model_validate_json(pending).kind if pending else None,
+        )
 
     def seen_since(self, since: float) -> list[Listing]:
         """The latest state of the listings seen in the shop since ``since``, newest first."""
@@ -633,28 +776,53 @@ class ListingStore:
             )
         ]
 
-    def polls(self, *, since: float = 0) -> list[Poll]:
+    def polls(
+        self,
+        *,
+        since: float = 0,
+        before: int | None = None,
+        limit: int | None = None,
+        newest_first: bool = False,
+    ) -> list[Poll]:
+        """The recorded polls, oldest first unless ``newest_first``.
+
+        ``before`` keeps the polls older than the poll with this ID, to page through them
+        ``limit`` at a time.
+        """
+        query = """
+            SELECT id, time, reported, received, complete, new, back, missing, gone, filtered,
+                   restocked, sold_out, error
+            FROM polls WHERE time >= ?
+        """
+        params: list[Any] = [since]
+        if before is not None:
+            query += " AND (time, id) < (SELECT time, id FROM polls WHERE id = ?)"
+            params.append(before)
+        order = "DESC" if newest_first else "ASC"
+        query += f" ORDER BY time {order}, id {order}"
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(limit)
         return [
             Poll(
-                time=_ts(row[0]),
-                reported=row[1],
-                received=row[2],
-                complete=None if row[3] is None else bool(row[3]),
-                new=row[4],
-                back=row[5],
-                missing=row[6],
-                gone=row[7],
-                filtered=row[8],
-                restocked=row[9],
-                sold_out=row[10],
-                error=row[11],
+                id=row[0],
+                time=_ts(row[1]),
+                reported=row[2],
+                received=row[3],
+                complete=None if row[4] is None else bool(row[4]),
+                new=row[5],
+                back=row[6],
+                missing=row[7],
+                gone=row[8],
+                filtered=row[9],
+                restocked=row[10],
+                sold_out=row[11],
+                error=row[12],
             )
-            for row in self._db.execute(
-                """
-                SELECT time, reported, received, complete, new, back, missing, gone, filtered,
-                       restocked, sold_out, error
-                FROM polls WHERE time >= ? ORDER BY time, id
-                """,
-                (since,),
-            )
+            for row in self._db.execute(query, params)
         ]
+
+
+def _escape_like(text: str) -> str:
+    """Make ``text`` match literally in a LIKE pattern with ``ESCAPE '\\'``."""
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")

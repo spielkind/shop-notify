@@ -19,8 +19,9 @@ in its configuration** and the **integrity of the notifications**. It must:
 3. **Only talk to the configured services over authenticated channels**: Etsy and
    images via HTTPS with certificate verification; notification services as configured
    by the operator.
-4. **Run with least privilege**: no root, no listening ports, no write access outside
-   its data directory.
+4. **Run with least privilege**: no root and no write access outside its data directory.
+   The poller listens on no port; the optional [read-only API](api.md) only reads the
+   database, needs no credentials and is not reachable from other machines by default.
 5. **Deliver unmodified software**: releases and images must be traceable to the
    source code in this repository and verifiable by users.
 
@@ -39,6 +40,10 @@ Users should be aware of these limits:
   sends data unencrypted. The operator chooses the targets.
 - **Content of listings is shown as is.** A shop owner can put misleading text or links
   in a listing; Shop Notify escapes it but cannot judge whether it is trustworthy.
+- **The optional API has no authentication.** Anyone who can reach it can read the
+  history – titles, prices and poll errors. It listens on `127.0.0.1` by default and
+  publishes no port in `compose.yaml`; to reach it from elsewhere, put a reverse proxy
+  with authentication in front of it.
 - **Availability depends on Etsy.** If the API is unavailable or the quota is used up,
   notifications are delayed; a failed delivery is retried with the next poll.
 - **No protection against a compromised Etsy API, notification service or Python
@@ -53,6 +58,8 @@ Users should be aware of these limits:
 | Credentials baked into the image | Docker build | `.dockerignore`; configuration only via `env_file` and mounted files at runtime |
 | HTML injection via listing titles | Etsy API → e-mail | Jinja2 autoescaping for HTML templates, `StrictUndefined` |
 | SQL injection | Etsy API → SQLite | parameterised queries only |
+| Reading or changing data through the API | optional API | disabled by default; listens on `127.0.0.1`, no published port in `compose.yaml`; only `GET`; the database is opened read-only (`mode=ro`) for every request; the API process gets no `.env` and no credentials |
+| Malicious API requests | optional API | parameters validated with pydantic (unknown or repeated ones rejected, at most 20, `limit` ≤ 500, search text ≤ 200 characters); parameterised queries, LIKE wildcards escaped; request timeout; unexpected errors only logged, not returned; container memory, CPU and PID limits |
 | Slow regular expressions (ReDoS) | filters | patterns come from the operator, titles are at most 140 characters; invalid patterns are rejected at startup |
 | Malformed or hostile API responses | Etsy API | pydantic validation of every item; invalid items are skipped and logged; timeouts and bounded retries |
 | Man-in-the-middle | network | HTTPS with certificate verification (httpx defaults, not configurable); the default Etsy endpoint is HTTPS |
@@ -68,9 +75,11 @@ Users should be aware of these limits:
 
 **Arguments and evidence:**
 
-1. **Small attack surface.** The process opens no ports, accepts no inbound
+1. **Small attack surface.** The poller opens no ports, accepts no inbound
    connections and has a single untrusted input (Etsy API responses and images).
-   Everything else is configuration supplied by the operator.
+   Everything else is configuration supplied by the operator. The optional API is a
+   separate process that is disabled by default, only reads, holds no credentials and
+   validates every request.
    *Evidence:* [architecture.md](architecture.md#external-interfaces-and-trust-boundaries).
 2. **Untrusted input is validated and encoded at the boundaries** (requirement 2).
    Responses are parsed into pydantic models item by item; data reaches SQLite only
