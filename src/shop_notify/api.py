@@ -20,6 +20,7 @@ from typing import Any, cast
 from urllib.parse import parse_qs, urlsplit
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
+from pydantic.json_schema import GenerateJsonSchema
 
 from shop_notify import __version__
 from shop_notify.config import ApiSettings
@@ -83,12 +84,20 @@ RESPONSES: tuple[type, ...] = (Health, PollPage, EventPage, ListingDetail, Error
 _ADAPTERS: dict[type, TypeAdapter[Any]] = {t: TypeAdapter(t) for t in RESPONSES}
 
 
+class _SchemaWithoutFieldTitles(GenerateJsonSchema):
+    """Field titles only repeat the names, and give generated client types needless aliases."""
+
+    def field_title_should_be_set(self, schema: Any) -> bool:
+        return False
+
+
 def schema() -> dict[str, Any]:
     """JSON schema of the responses, kept in docs/api.schema.json for the web UI."""
     _, result = TypeAdapter.json_schemas(
         [(t.__name__, "serialization", _ADAPTERS[t]) for t in RESPONSES],
         title="Shop Notify API",
         description=f"Responses of the read-only API, schema version {SCHEMA_VERSION}",
+        schema_generator=_SchemaWithoutFieldTitles,
     )
     return result
 
