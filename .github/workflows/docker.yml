@@ -133,7 +133,7 @@ jobs:
         run: scripts/sarif-label.sh trivy.sarif "$TOOL" "image built from $REF (${SHA:0:7})"
       - name: Upload scan results to GitHub code scanning
         if: always() && matrix.platform == 'linux/amd64' && hashFiles('trivy.sarif') != ''
-        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           sarif_file: trivy.sarif
           category: trivy-image
@@ -171,7 +171,7 @@ jobs:
         run: scripts/sarif-label.sh trivy-ui.sarif "$TOOL" "web UI image built from $REF (${SHA:0:7})"
       - name: Upload scan results of the web UI to GitHub code scanning
         if: always() && matrix.platform == 'linux/amd64' && hashFiles('trivy-ui.sarif') != ''
-        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           sarif_file: trivy-ui.sarif
           category: trivy-ui-image
@@ -379,7 +379,7 @@ jobs:
         env:
           TOOL: ${{ matrix.tool }}
         run: scripts/sarif-label.sh trivy-latest.sarif "$TOOL" "$IMAGE:latest (released image)"
-      - uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+      - uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           sarif_file: trivy-latest.sarif
           category: ${{ matrix.category }}
