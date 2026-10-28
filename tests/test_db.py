@@ -11,8 +11,14 @@ from unittest.mock import patch
 
 import pytest
 
-from shop_notify.db import SCHEMA_VERSION, DatabaseUnavailableError, Event, ListingStore
-from shop_notify.models import Listing, Money
+from shop_notify.db import (
+    SCHEMA_VERSION,
+    DatabaseUnavailableError,
+    Event,
+    ListingStore,
+    StoredListing,
+)
+from shop_notify.models import Listing, ListingImage, Money
 from tests.helpers import make_listing, sync
 
 HOUR = 3600
@@ -550,3 +556,96 @@ def test_polls_can_be_paged_newest_first(store: ListingStore) -> None:
     page = store.polls(newest_first=True, limit=2)
     assert [p.error for p in store.polls(newest_first=True, before=page[-1].id)] == ["100"]
     assert [p.error for p in store.polls(since=200)] == ["200", "300"]
+
+
+# --- listings and their images ----------------------------------------------------
+
+
+def stored_ids(items: Sequence[StoredListing]) -> list[int]:
+    return [item.listing.listing_id for item in items]
+
+
+def test_migrates_a_database_from_version_1_3(tmp_path: Path) -> None:
+    path = tmp_path / "shop-notify.db"
+    with ListingStore(path) as store:
+        sync(store, [make_listing(1)])
+    old = sqlite3.connect(path)
+    for column in ("image_url", "thumbnail_url", "image_checked"):
+        old.execute(f"ALTER TABLE listings DROP COLUMN {column}")
+    old.execute("PRAGMA user_version = 3")
+    old.commit()
+    old.close()
+
+    with ListingStore(path) as store:
+        assert store.listings_needing_images(10) == [1]
+        listing = store.listing(1)
+        assert listing is not None and listing.image_url is None
+    assert (tmp_path / "shop-notify.db.bak-v3").is_file()
+
+
+def test_listings_by_status_newest_first(store: ListingStore) -> None:
+    with at(100):
+        store.mark_as_notified(sync(store, [make_listing(1, "Silver ring")]).pending)
+    with at(200):
+        store.mark_as_notified(sync(store, [make_listing(i) for i in (1, 2, 3, 4)]).pending)
+    with at(300):
+        result = store.sync([make_listing(1, "Silver ring"), make_listing(2)])
+        store.record_states({3: "sold_out"}, result)
+    with at(400):
+        store.sync([make_listing(1, "Silver ring"), make_listing(2)], forget_after=150)
+
+    # 4 was only missing at 300 and has been gone since 400; 3 sold out
+    assert stored_ids(store.listings()) == [4, 3, 2, 1]
+    assert stored_ids(store.listings(status="listed")) == [2, 1]
+    assert stored_ids(store.listings(status="sold_out")) == []  # gone too, since 400
+    assert stored_ids(store.listings(status="gone")) == [4, 3]
+    assert store.listing_counts() == {"listed": 2, "missing": 0, "sold_out": 0, "gone": 2}
+    assert stored_ids(store.listings(text="RING")) == [1]
+    assert stored_ids(store.listings(text="%")) == []
+
+    first = store.listings(limit=3)
+    assert stored_ids(first) == [4, 3, 2]
+    assert stored_ids(store.listings(limit=3, before=first[-1].listing.listing_id)) == [1]
+
+
+def test_listing_counts_with_missing_and_sold_out(store: ListingStore) -> None:
+    assert store.listing_counts() == {"listed": 0, "missing": 0, "sold_out": 0, "gone": 0}
+    with at(100):
+        store.mark_as_notified(sync(store, [make_listing(1), make_listing(2)]).pending)
+    with at(200):
+        store.record_states({1: "sold_out"}, store.sync([]))
+    assert store.listing_counts() == {"listed": 0, "missing": 1, "sold_out": 1, "gone": 0}
+    assert [item.status for item in store.listings()] == ["missing", "sold_out"]
+
+
+def test_images_are_looked_up_once_per_change(store: ListingStore) -> None:
+    with at(100):
+        sync(store, [make_listing(1), make_listing(2), make_listing(3)])
+    assert store.listings_needing_images(2) == [3, 2]
+    assert store.listings_needing_images(10) == [3, 2, 1]
+
+    images = {
+        1: ListingImage("https://i.etsystatic.com/1.jpg", "https://i.etsystatic.com/1s.jpg"),
+        3: ListingImage("https://i.etsystatic.com/3.jpg", None),
+    }
+    store.record_images([1, 2, 3], images)
+    # 2 has no image: it is not looked up again either
+    assert store.listings_needing_images(10) == []
+    assert store.image_urls([1, 2, 3]) == {
+        1: "https://i.etsystatic.com/1.jpg",
+        3: "https://i.etsystatic.com/3.jpg",
+    }
+    assert store.image_urls([]) == {}
+    listing = store.listing(1)
+    assert listing is not None
+    assert (listing.image_url, listing.thumbnail_url) == (
+        "https://i.etsystatic.com/1.jpg",
+        "https://i.etsystatic.com/1s.jpg",
+    )
+
+    # a changed listing is looked up again, one that left the shop isn't
+    changed = make_listing(1).model_copy(update={"last_modified_timestamp": 1_700_000_100})
+    with at(200):
+        store.mark_as_notified(store.pending())
+        store.sync([changed, make_listing(2)])
+    assert store.listings_needing_images(10) == [1]

@@ -18,7 +18,7 @@ from shop_notify import __main__ as cli
 from shop_notify import __version__, api
 from shop_notify.config import ApiSettings
 from shop_notify.db import SCHEMA_VERSION, ListingStore
-from shop_notify.models import Money
+from shop_notify.models import ListingImage, Money
 from tests.helpers import make_listing, sync
 
 SCHEMA_FILE = Path(__file__).parent.parent / "docs" / "api.schema.json"
@@ -168,6 +168,72 @@ def test_a_listing_with_its_events(server: httpx.Client) -> None:
     assert [e["event"] for e in body["events"]] == ["sold_out", "notified", "new"]
 
 
+def listing_ids(response: httpx.Response) -> list[int]:
+    return [item["listing"]["listing_id"] for item in response.json()["listings"]]
+
+
+def test_listings_in_the_shop_by_default(server: httpx.Client) -> None:
+    response = server.get("/api/listings")
+    assert response.status_code == 200
+    assert listing_ids(response) == [2]
+    body = response.json()
+    assert body["counts"] == {"listed": 1, "missing": 0, "sold_out": 1, "gone": 0}
+    assert body["next"] is None
+    mug = body["listings"][0]
+    assert (mug["status"], mug["listing"]["title"]) == ("listed", "Mug 50% 2")
+    assert (mug["image_url"], mug["thumbnail_url"]) == (None, None)
+
+
+@pytest.mark.parametrize(
+    ("params", "expected"),
+    [
+        ({"status": "all"}, [2, 1]),
+        ({"status": "sold_out"}, [1]),
+        ({"status": "gone"}, []),
+        ({"status": "all", "q": "ring"}, [1]),
+        ({"status": "all", "limit": 1, "before": 2}, [1]),
+    ],
+)
+def test_listings_can_be_filtered(
+    server: httpx.Client, params: dict[str, Any], expected: list[int]
+) -> None:
+    assert listing_ids(server.get("/api/listings", params=params)) == expected
+
+
+def test_listings_in_pages(server: httpx.Client) -> None:
+    page = server.get("/api/listings", params={"status": "all", "limit": 1}).json()
+    assert [item["listing"]["listing_id"] for item in page["listings"]] == [2]
+    assert page["next"] == 2
+
+
+def test_listings_with_their_images(server: httpx.Client, db: Path) -> None:
+    with ListingStore(db) as store:
+        store.record_images(
+            [2],
+            {2: ListingImage("https://i.etsystatic.com/2.jpg", "https://i.etsystatic.com/2s.jpg")},
+        )
+    mug = server.get("/api/listings").json()["listings"][0]
+    assert (mug["image_url"], mug["thumbnail_url"]) == (
+        "https://i.etsystatic.com/2.jpg",
+        "https://i.etsystatic.com/2s.jpg",
+    )
+    assert server.get("/api/listings/2").json()["listing"]["image_url"] == mug["image_url"]
+
+
+@pytest.mark.parametrize(
+    ("query", "error"),
+    [
+        ("status=sold", "status: Input should be 'listed', 'missing', 'sold_out', 'gone' or 'all'"),
+        ("since=2026-01-01T00:00:00Z", "since: Extra inputs are not permitted"),
+        ("limit=0", "limit: Input should be greater than or equal to 1"),
+    ],
+)
+def test_invalid_listing_parameters(server: httpx.Client, query: str, error: str) -> None:
+    response = server.get(f"/api/listings?{query}")
+    assert response.status_code == 400
+    assert error in response.json()["error"]
+
+
 def test_an_unknown_listing(server: httpx.Client) -> None:
     response = server.get("/api/listings/3")
     assert response.status_code == 404
@@ -175,7 +241,7 @@ def test_an_unknown_listing(server: httpx.Client) -> None:
 
 
 @pytest.mark.parametrize(
-    "path", ["/", "/api", "/api/listings", "/api/listings/abc", "/api/listings/0", "/api/polls/"]
+    "path", ["/", "/api", "/api/listing", "/api/listings/abc", "/api/listings/0", "/api/polls/"]
 )
 def test_unknown_endpoints(server: httpx.Client, path: str) -> None:
     response = server.get(path)

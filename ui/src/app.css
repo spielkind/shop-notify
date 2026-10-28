@@ -242,6 +242,74 @@ label {
 	justify-content: space-between;
 }
 
+.tabs {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem 1.25rem;
+	margin-bottom: 1rem;
+}
+
+.tabs a {
+	color: var(--fg);
+	text-decoration: none;
+}
+
+.tabs a[aria-current='page'] {
+	color: var(--accent);
+	font-weight: 600;
+}
+
+.cards {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+	gap: 1.25rem;
+	padding: 0;
+	list-style: none;
+}
+
+.card {
+	display: flex;
+	flex-direction: column;
+	gap: 0.3rem;
+	padding-bottom: 0.5rem;
+	border: 1px solid var(--line);
+	border-radius: 0.5rem;
+	background: var(--card);
+	overflow: hidden;
+}
+
+.card a {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	color: var(--fg);
+	text-decoration: none;
+}
+
+.card img,
+.card .no-image {
+	width: 100%;
+	aspect-ratio: 4 / 3;
+	object-fit: cover;
+}
+
+.card .no-image {
+	display: grid;
+	place-items: center;
+	color: var(--muted);
+	background: var(--line);
+}
+
+.card .title,
+.card p {
+	margin: 0;
+	padding: 0 0.75rem;
+}
+
+.card .title {
+	font-weight: 600;
+}
+
 .listing {
 	display: flex;
 	flex-wrap: wrap;

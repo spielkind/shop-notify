@@ -36,6 +36,12 @@
 		{/if}
 	</section>
 
+	{#if data.listed !== null}
+		<p>
+			<a href={resolve('/listings')}>{f.t.overview.listingsInShop(data.listed)} →</a>
+		</p>
+	{/if}
+
 	<section>
 		<h2>{f.t.overview.recentEvents}</h2>
 		{#if data.events.length}

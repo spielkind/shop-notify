@@ -57,14 +57,16 @@ The web UI is a separate [SvelteKit](https://svelte.dev/docs/kit) app in [`ui/`]
    - For listings missing for the first time, `EtsyClient.listing_states` asks Etsy
      why (`sold_out`, `inactive`, `expired`, removed); a sold-out listing is notified
      as *restocked* as soon as it's back.
-3. The listings to notify pass through the [filters](filters.md). Those that don't
+3. The main image of new and changed listings in the shop is looked up
+   (`EtsyClient.listing_images`, up to 100 per poll, i.e. one request) and stored, for
+   the notifications and the web UI. A shop seen for the first time is filled in over a
+   few polls.
+4. The listings to notify pass through the [filters](filters.md). Those that don't
    are marked as *filtered*; while they are in the shop they are checked again on
    every poll and notified once they pass (e.g. after a title change).
-4. On the first run (empty database) the new listings are only recorded and printed to
-   the console.
-5. Otherwise the main image of each new listing is fetched
-   (`EtsyClient.listing_images`), the notification is rendered and sent to every
-   target. Only after that are the listings marked as notified – if sending fails, they
+5. On the first run (empty database) the new listings are only recorded and printed to
+   the console. Otherwise the notification is rendered with the stored images and sent
+   to every target. Only after that are the listings marked as notified – if sending fails, they
    are sent again with the next poll.
 6. The poll is recorded (counts, completeness, changes, errors), and a heartbeat file is updated (`healthcheck`) and, under systemd, the watchdog is
    notified. The process waits `POLL_INTERVAL` seconds and starts again.
@@ -102,6 +104,9 @@ erDiagram
         INTEGER filtered "1 if held back by the filters"
         TEXT pending "queued notification: kind and details (JSON), else NULL"
         TEXT result "latest state: title, URL, price, Etsy timestamps (JSON)"
+        TEXT image_url "main image, 570 pixels wide, else NULL"
+        TEXT thumbnail_url "main image, 170 x 135 pixels, else NULL"
+        INTEGER image_checked "Etsy's last_modified_timestamp when the image was looked up"
     }
     listing_events {
         INTEGER id PK
@@ -149,7 +154,8 @@ made; a database of a newer version is refused. Version 1 (Shop Notify 1.1) repl
 table of 1.0 (`listing_id`, `request_date`, `notified_date`, `result`); version 2
 (Shop Notify 1.2) added the `filtered` columns; version 3 (Shop Notify 1.3) replaced
 `back` with the notification queue `pending` and added `sold_out_since`, `notified_price`
-and the poll counts `restocked` and `sold_out`.
+and the poll counts `restocked` and `sold_out`; version 4 (Shop Notify 1.6) added the
+images `image_url`, `thumbnail_url` and `image_checked`.
 
 ## External interfaces and trust boundaries
 

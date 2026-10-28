@@ -205,6 +205,31 @@
       "title": "Listing",
       "type": "object"
     },
+    "ListingCounts": {
+      "description": "Number of listings per status.",
+      "properties": {
+        "listed": {
+          "type": "integer"
+        },
+        "missing": {
+          "type": "integer"
+        },
+        "sold_out": {
+          "type": "integer"
+        },
+        "gone": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "listed",
+        "missing",
+        "sold_out",
+        "gone"
+      ],
+      "title": "ListingCounts",
+      "type": "object"
+    },
     "ListingDetail": {
       "properties": {
         "listing": {
@@ -222,6 +247,36 @@
         "events"
       ],
       "title": "ListingDetail",
+      "type": "object"
+    },
+    "ListingPage": {
+      "properties": {
+        "listings": {
+          "items": {
+            "$ref": "#/$defs/StoredListing"
+          },
+          "type": "array"
+        },
+        "counts": {
+          "$ref": "#/$defs/ListingCounts"
+        },
+        "next": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "listings",
+        "counts",
+        "next"
+      ],
+      "title": "ListingPage",
       "type": "object"
     },
     "Money": {
@@ -432,6 +487,26 @@
               "type": "null"
             }
           ]
+        },
+        "image_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "thumbnail_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -444,12 +519,14 @@
         "sold_out_since",
         "notified",
         "filtered",
-        "pending"
+        "pending",
+        "image_url",
+        "thumbnail_url"
       ],
       "title": "StoredListing",
       "type": "object"
     }
   },
   "title": "Shop Notify API",
-  "description": "Responses of the read-only API, schema version 3"
+  "description": "Responses of the read-only API, schema version 4"
 }

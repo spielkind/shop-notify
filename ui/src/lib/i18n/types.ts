@@ -9,6 +9,7 @@ export interface Messages {
 
 	nav: {
 		overview: string;
+		listings: string;
 		events: string;
 		polls: string;
 		logout: string;
@@ -33,8 +34,22 @@ export interface Messages {
 		pollOk: (received: number) => string;
 		pollIncomplete: (received: number, reported: number) => string;
 		pollFailed: string;
+		listingsInShop: (n: number) => string;
 		recentEvents: string;
 		allEvents: string;
+	};
+
+	listings: {
+		title: string;
+		status: string;
+		all: string;
+		search: string;
+		apply: string;
+		none: string;
+		older: string;
+		newest: string;
+		inStock: (n: number) => string;
+		noImage: string;
 	};
 
 	events: {

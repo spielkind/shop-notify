@@ -48,7 +48,8 @@ The [web UI](docs/web-ui.md) in `ui/` needs Node.js 26 or newer:
 cd ui
 npm ci --ignore-scripts
 npm run check && npm run lint   # types (svelte-check), Prettier and ESLint
-npm test                        # unit tests; src/lib is kept at 100 % coverage
+npm test                        # unit tests of the server code and the pages (rendered with
+                                # svelte/server); kept at 100 % coverage
 npm run api-types               # after changing an API response (docs/api.schema.json)
 ```
 

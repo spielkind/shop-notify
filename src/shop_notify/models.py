@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -7,6 +8,16 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 # before it is notified, the first one in this list wins
 EVENTS = ("new", "restocked", "back", "price_drop", "low_stock", "price_rise", "sold_out")
 DEFAULT_EVENTS = frozenset({"new", "back"})
+
+
+@dataclass(frozen=True)
+class ListingImage:
+    """The main image of a listing."""
+
+    url: str
+    """570 pixels wide."""
+    thumbnail_url: str | None
+    """170 x 135 pixels."""
 
 
 class Money(BaseModel):

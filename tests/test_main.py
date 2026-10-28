@@ -18,7 +18,7 @@ from shop_notify.config import NotifySettings, Settings
 from shop_notify.db import EventSettings, ListingStore
 from shop_notify.etsy import EtsyClient, EtsyError, Quota
 from shop_notify.filters import Filters, Rule
-from shop_notify.models import Listing, Money
+from shop_notify.models import Listing, ListingImage, Money
 from shop_notify.notifications import (
     AppriseNotifier,
     ConsoleNotifier,
@@ -36,6 +36,7 @@ def _client(quota: Quota | None = None) -> MagicMock:
     client.quota = quota
     client.listings_reported = client.listings_received = 0
     client.listings_complete = True
+    client.listing_images.return_value = {}
     return client
 
 
@@ -159,7 +160,7 @@ def test_run_once_notifies_only_new_items(caplog: pytest.LogCaptureFixture) -> N
     caplog.set_level(logging.INFO)
     client = _client()
     client.active_listings.return_value = [make_listing(1), make_listing(2)]
-    client.listing_images.return_value = {2: "https://img/2.jpg"}
+    client.listing_images.return_value = {2: ListingImage("https://img/2.jpg", None)}
     store = ListingStore(":memory:")
     notifier = RecordingNotifier()
 
@@ -167,7 +168,8 @@ def test_run_once_notifies_only_new_items(caplog: pytest.LogCaptureFixture) -> N
     assert cli.run_once(client, store, notifier, 42, notify_existing=True) == 0
     assert notifier.calls == [[1, 2]]
     assert notifier.images == [[None, "https://img/2.jpg"]]
-    client.listing_images.assert_called_once_with([1, 2])
+    # looked up once, newest first; not again while the listings are unchanged
+    client.listing_images.assert_called_once_with([2, 1])
     assert "New item: Item 1 (https://www.etsy.com/listing/1)" in caplog.text
     assert "New item: Item 2 (https://www.etsy.com/listing/2)" in caplog.text
     store.close()
@@ -203,7 +205,7 @@ def test_run_once_notifies_without_images_if_loading_fails(
 
     assert cli.run_once(client, store, notifier, 42, notify_existing=True) == 1
     assert notifier.images == [[None]]
-    assert "Could not load listing images" in caplog.text
+    assert "Could not look up listing images: boom" in caplog.text
     store.close()
 
 
@@ -577,7 +579,8 @@ def test_first_run_records_existing_items_silently(caplog: pytest.LogCaptureFixt
 
     assert notifier.calls == [[1, 2], [3]]
     assert notifier.initial == [True, False]
-    client.listing_images.assert_called_once_with([3])
+    # the images of the existing items are looked up on the first run already
+    assert [c.args for c in client.listing_images.call_args_list] == [([2, 1],), ([3],)]
     assert "First run: 2 existing item(s) recorded" in caplog.text
     assert "New item: Item 1" not in caplog.text
     assert "New item: Item 3" in caplog.text
@@ -997,3 +1000,48 @@ def test_check_filters_argument_errors(
     with pytest.raises(SystemExit):
         cli.main(argv)
     assert error in capsys.readouterr().err
+
+
+# --- images --------------------------------------------------------------------------
+
+
+def test_refresh_images_up_to_a_limit_per_poll(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cli, "IMAGES_PER_POLL", 2)
+    client = _client()
+    store = ListingStore(":memory:")
+    sync(store, [make_listing(1), make_listing(2), make_listing(3)])
+    client.listing_images.return_value = {3: ListingImage("https://img/3.jpg", None)}
+
+    cli.refresh_images(client, store)
+    cli.refresh_images(client, store)
+    cli.refresh_images(client, store)
+    # newest first, two per poll, and nothing once all were looked up
+    assert [c.args for c in client.listing_images.call_args_list] == [([3, 2],), ([1],)]
+    assert store.image_urls([1, 2, 3]) == {3: "https://img/3.jpg"}
+    store.close()
+
+
+def test_recurring_image_lookup_error_is_warned_once(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.DEBUG)
+    client = _client()
+    store = ListingStore(":memory:")
+    sync(store, [make_listing(1)])
+
+    def warnings() -> list[str]:
+        return [r.message for r in caplog.records if r.levelno == logging.WARNING]
+
+    client.listing_images.side_effect = EtsyError("down")
+    cli.refresh_images(client, store)
+    cli.refresh_images(client, store)
+    assert warnings() == ["Could not look up listing images: down"]
+
+    # once it works, a later failure is warned about again
+    client.listing_images.side_effect = None
+    client.listing_images.return_value = {}
+    cli.refresh_images(client, store)
+    assert store.last_image_lookup_error is None
+    sync(store, [make_listing(2)])
+    client.listing_images.side_effect = EtsyError("down")
+    cli.refresh_images(client, store)
+    assert len(warnings()) == 2
+    store.close()

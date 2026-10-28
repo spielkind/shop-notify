@@ -1,7 +1,7 @@
 // Generated from docs/api.schema.json by 'npm run api-types' - don't edit
 
 /**
- * Responses of the read-only API, schema version 3
+ * Responses of the read-only API, schema version 4
  */
 export interface ShopNotifyAPI {
   [k: string]: unknown;
@@ -93,6 +93,18 @@ export interface Money {
   currency_code: string;
 }
 /**
+ * Number of listings per status.
+ *
+ * This interface was referenced by `ShopNotifyAPI`'s JSON-Schema
+ * via the `definition` "ListingCounts".
+ */
+export interface ListingCounts {
+  listed: number;
+  missing: number;
+  sold_out: number;
+  gone: number;
+}
+/**
  * This interface was referenced by `ShopNotifyAPI`'s JSON-Schema
  * via the `definition` "ListingDetail".
  */
@@ -117,6 +129,17 @@ export interface StoredListing {
   notified: string | null;
   filtered: boolean;
   pending: string | null;
+  image_url: string | null;
+  thumbnail_url: string | null;
+}
+/**
+ * This interface was referenced by `ShopNotifyAPI`'s JSON-Schema
+ * via the `definition` "ListingPage".
+ */
+export interface ListingPage {
+  listings: StoredListing[];
+  counts: ListingCounts;
+  next: number | null;
 }
 /**
  * This interface was referenced by `ShopNotifyAPI`'s JSON-Schema

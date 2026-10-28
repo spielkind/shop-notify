@@ -10,7 +10,7 @@ from typing import Any, Self
 import httpx
 from pydantic import BaseModel, ValidationError
 
-from shop_notify.models import Listing
+from shop_notify.models import Listing, ListingImage
 
 log = logging.getLogger(__name__)
 
@@ -52,6 +52,7 @@ class _ListingState(BaseModel):
 class _ListingImage(BaseModel):
     rank: int = 0
     url_570xN: str  # noqa: N815 (Etsy field name)
+    url_170x135: str | None = None
 
 
 class _ListingWithImages(BaseModel):
@@ -160,9 +161,9 @@ class EtsyClient:
                 return shop.shop_id
         raise EtsyError(f"Shop {shop_name!r} not found")
 
-    def listing_images(self, listing_ids: Sequence[int]) -> dict[int, str]:
-        """Return the URL of the main image (570px wide) for each listing that has one."""
-        images: dict[int, str] = {}
+    def listing_images(self, listing_ids: Sequence[int]) -> dict[int, ListingImage]:
+        """Return the main image of each listing that has one."""
+        images: dict[int, ListingImage] = {}
         for start in range(0, len(listing_ids), PAGE_SIZE):
             chunk = listing_ids[start : start + PAGE_SIZE]
             response = self._get(
@@ -173,7 +174,7 @@ class EtsyClient:
             for listing in _validate_each(_ListingWithImages, page.results):
                 if listing.images:
                     main = min(listing.images, key=lambda image: image.rank)
-                    images[listing.listing_id] = main.url_570xN
+                    images[listing.listing_id] = ListingImage(main.url_570xN, main.url_170x135)
         return images
 
     def listing_states(self, listing_ids: Sequence[int]) -> dict[int, str]:

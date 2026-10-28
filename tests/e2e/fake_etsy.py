@@ -117,7 +117,13 @@ class Handler(BaseHTTPRequestHandler):
                 {
                     "listing_id": item["listing_id"],
                     "state": listing_state(item),
-                    "images": [{"rank": 1, "url_570xN": item["image_url"]}],
+                    "images": [
+                        {
+                            "rank": 1,
+                            "url_570xN": item["image_url"],
+                            "url_170x135": item["image_url"],
+                        }
+                    ],
                 }
                 for item in listings
                 if item["listing_id"] in ids
