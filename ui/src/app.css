@@ -1,0 +1,298 @@
+:root {
+	color-scheme: light dark;
+	--bg: #fbfaf8;
+	--fg: #1f1d1a;
+	--muted: #6b665e;
+	--line: #e3dfd8;
+	--accent: #c2410c;
+	--card: #ffffff;
+	--ok: #15803d;
+	--warn: #b45309;
+	--bad: #b91c1c;
+	font-family:
+		system-ui,
+		-apple-system,
+		'Segoe UI',
+		Roboto,
+		sans-serif;
+	line-height: 1.5;
+	background: var(--bg);
+	color: var(--fg);
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--bg: #171614;
+		--fg: #ece8e1;
+		--muted: #a29b90;
+		--line: #34312c;
+		--accent: #fb923c;
+		--card: #201e1b;
+		--ok: #4ade80;
+		--warn: #fbbf24;
+		--bad: #f87171;
+	}
+}
+
+body {
+	margin: 0;
+}
+
+header {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem 1.5rem;
+	padding: 0.75rem 1.5rem;
+	border-bottom: 1px solid var(--line);
+	background: var(--card);
+}
+
+nav {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 1.25rem;
+	align-items: baseline;
+}
+
+nav a {
+	color: var(--fg);
+	text-decoration: none;
+}
+
+nav a[aria-current='page'] {
+	color: var(--accent);
+	font-weight: 600;
+}
+
+.brand {
+	font-weight: 700;
+}
+
+header form {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+}
+
+main {
+	max-width: 72rem;
+	margin: 0 auto;
+	padding: 1.5rem;
+}
+
+a {
+	color: var(--accent);
+}
+
+h1 {
+	margin-top: 0;
+}
+
+.muted {
+	color: var(--muted);
+}
+
+table {
+	width: 100%;
+	border-collapse: collapse;
+}
+
+th,
+td {
+	padding: 0.4rem 0.6rem;
+	border-bottom: 1px solid var(--line);
+	text-align: left;
+	vertical-align: top;
+}
+
+th {
+	color: var(--muted);
+	font-weight: 600;
+}
+
+.number {
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+}
+
+.time {
+	white-space: nowrap;
+	font-variant-numeric: tabular-nums;
+}
+
+.details {
+	color: var(--muted);
+}
+
+.tag {
+	display: inline-block;
+	padding: 0 0.45rem;
+	border: 1px solid var(--line);
+	border-radius: 0.3rem;
+	white-space: nowrap;
+}
+
+.tag[data-event='new'],
+.tag[data-event='back'],
+.tag[data-event='restocked'],
+.tag[data-result='ok'],
+.tag[data-status='listed'] {
+	border-color: var(--ok);
+	color: var(--ok);
+}
+
+.tag[data-event='sold_out'],
+.tag[data-event='gone'],
+.tag[data-event='removed'],
+.tag[data-result='failed'],
+.tag[data-status='gone'],
+.tag[data-status='sold_out'] {
+	border-color: var(--bad);
+	color: var(--bad);
+}
+
+.tag[data-event='missing'],
+.tag[data-event='low_stock'],
+.tag[data-result='incomplete'],
+.tag[data-status='missing'] {
+	border-color: var(--warn);
+	color: var(--warn);
+}
+
+.poll[data-result='failed'] {
+	color: var(--bad);
+}
+
+.poll[data-result='incomplete'] {
+	color: var(--warn);
+}
+
+.notice {
+	padding: 0.6rem 0.9rem;
+	border-radius: 0.4rem;
+	border: 1px solid var(--line);
+	background: var(--card);
+}
+
+.notice.error {
+	border-color: var(--bad);
+}
+
+button {
+	font: inherit;
+	padding: 0.35rem 0.9rem;
+	border: 1px solid var(--accent);
+	border-radius: 0.35rem;
+	background: var(--accent);
+	color: #fff;
+	cursor: pointer;
+}
+
+input {
+	font: inherit;
+	padding: 0.35rem 0.5rem;
+	border: 1px solid var(--line);
+	border-radius: 0.35rem;
+	background: var(--card);
+	color: var(--fg);
+}
+
+label {
+	display: flex;
+	flex-direction: column;
+	gap: 0.2rem;
+}
+
+.filter {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: end;
+	gap: 1rem;
+	margin-bottom: 1.5rem;
+}
+
+.filter fieldset {
+	flex-basis: 100%;
+	border: 1px solid var(--line);
+	border-radius: 0.4rem;
+}
+
+.choices {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.3rem 1rem;
+}
+
+.choices label {
+	flex-direction: row;
+	align-items: center;
+	gap: 0.35rem;
+}
+
+.buttons {
+	display: flex;
+	align-items: center;
+	gap: 1rem;
+}
+
+.paging {
+	display: flex;
+	justify-content: space-between;
+}
+
+.listing {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 1.5rem;
+	margin-bottom: 2rem;
+}
+
+.listing img {
+	width: min(20rem, 100%);
+	border-radius: 0.5rem;
+	object-fit: cover;
+	align-self: start;
+}
+
+dl {
+	display: grid;
+	grid-template-columns: max-content 1fr;
+	gap: 0.25rem 1rem;
+}
+
+dt {
+	color: var(--muted);
+}
+
+dd {
+	margin: 0;
+}
+
+.login {
+	max-width: 22rem;
+	margin: 10vh auto;
+}
+
+.login form {
+	display: flex;
+	flex-direction: column;
+	gap: 0.9rem;
+	padding: 1.25rem;
+	border: 1px solid var(--line);
+	border-radius: 0.5rem;
+	background: var(--card);
+}
+
+.login h2 {
+	margin: 0;
+}
+
+pre {
+	overflow-x: auto;
+	padding: 0.6rem;
+	border-radius: 0.4rem;
+	background: var(--card);
+	border: 1px solid var(--line);
+}

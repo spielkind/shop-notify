@@ -8,6 +8,21 @@ notation (e.g. `1.0.0rc1` for `1.0.0-rc.1`).
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10-28
+
+### Added
+- Optional web UI of the history: the last poll, the events of all listings with
+  filters, the polls and each listing with its state and history. Signing in is
+  required; accounts are managed on the server with `shop-notify-ui`. Runs as its
+  own image `ghcr.io/spielkind/shop-notify-ui` with HTTPS from Caddy and Let's
+  Encrypt (`COMPOSE_PROFILES=caddy`) or behind your own nginx or Apache
+  (`COMPOSE_PROFILES=ui`) – see `docs/web-ui.md`
+
+### Changed
+- In `compose.yaml`, the `api` service is only attached to an internal network
+  without internet access, which the web UI shares; other containers have to join
+  the `backend` network to reach it
+
 ## [1.4.0] - 2026-10-28
 
 ### Added
@@ -251,7 +266,8 @@ until it has been verified against the real Etsy API with an approved key.
 
 Original version for the Etsy API v2 (never tagged).
 
-[Unreleased]: https://github.com/spielkind/shop-notify/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/spielkind/shop-notify/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/spielkind/shop-notify/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/spielkind/shop-notify/compare/v1.3.3...v1.4.0
 [1.3.3]: https://github.com/spielkind/shop-notify/compare/v1.3.2...v1.3.3
 [1.3.2]: https://github.com/spielkind/shop-notify/compare/v1.3.1...v1.3.2

@@ -31,12 +31,31 @@ The tests never use the network or your local `.env`: Etsy is mocked with
 [respx](https://lundberg.github.io/respx/), notifications go to a fake `shoptest://`
 Apprise service (see `tests/conftest.py`).
 
-`tests/e2e/run.sh` tests the Docker image end to end against a fake Etsy API and
-[Mailpit](https://mailpit.axllent.org) (needs Docker and jq; runs in CI for every build):
+`tests/e2e/run.sh` tests the Docker images end to end against a fake Etsy API and
+[Mailpit](https://mailpit.axllent.org), including the web UI behind Caddy, nginx and
+Apache (needs Docker, jq and openssl, and ports 80, 443 and 3000; runs in CI for every
+build):
 
 ```sh
-docker build -t shop-notify:ci . && tests/e2e/run.sh
+docker build -t shop-notify:ci . && docker build -t shop-notify-ui:ci ui && tests/e2e/run.sh
 ```
+
+### Web UI
+
+The [web UI](docs/web-ui.md) in `ui/` needs Node.js 24 or newer:
+
+```sh
+cd ui
+npm ci --ignore-scripts
+npm run check && npm run lint   # types (svelte-check), Prettier and ESLint
+npm test                        # unit tests; src/lib is kept at 100 % coverage
+npm run api-types               # after changing an API response (docs/api.schema.json)
+```
+
+To try it, run the API (`uv run shop-notify api`), create an account with
+`UI_DATA_DIR=ui-data npm run cli -- set-password admin` and start `npm run dev`
+(with `API_URL` if the API isn't on `127.0.0.1:8080`). Texts go into
+`src/lib/i18n/` – never directly into a page.
 
 ## Pull requests
 
@@ -80,6 +99,7 @@ Changes are listed in [`CHANGELOG.md`](CHANGELOG.md) under *Unreleased*. To publ
 
 ```sh
 uv version --bump minor                 # or patch / major / rc; updates pyproject.toml and uv.lock
+(cd ui && npm version --no-git-tag-version X.Y.Z)   # the web UI has the same version
 # CHANGELOG.md: rename "Unreleased" to "[X.Y.Z] - YYYY-MM-DD", add a new empty "Unreleased"
 git commit -am "chore(release): X.Y.Z"
 git tag -a vX.Y.Z -m "vX.Y.Z"           # SemVer notation, e.g. v1.0.0-rc.2

@@ -3,7 +3,8 @@
 Shop Notify is a single, long-running Python process. It polls the Etsy Open API,
 remembers which listings it has seen in a local SQLite database and sends new ones to
 notification services via [Apprise](https://github.com/caronc/apprise). Optionally, a
-second process serves the recorded history as a [read-only JSON API](api.md).
+second process serves the recorded history as a [read-only JSON API](api.md), and a
+[web UI](web-ui.md) shows it to signed-in users.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="how-it-works-dark.svg">
@@ -26,6 +27,16 @@ All modules are in [`src/shop_notify/`](../src/shop_notify):
 | `notifications.py` | `MessageRenderer` (Jinja templates, en/de, plain text and HTML), `AppriseNotifier` (e-mail: one HTML mail; push/chat: one message per item with image), `ConsoleNotifier` |
 | `systemd.py` | `sd_notify` messages (ready, watchdog, status) when running as a systemd service |
 | `templates/` | Built-in message templates per language; can be replaced with `NOTIFY_TEMPLATE_DIR` |
+
+The web UI is a separate [SvelteKit](https://svelte.dev/docs/kit) app in [`ui/`](../ui) (TypeScript, Node.js), with its own image `shop-notify-ui`:
+
+| Part | Responsibility |
+|---|---|
+| `src/routes/` | The pages, rendered only on the server (`csr = false`): overview, events, polls, listing, sign-in |
+| `src/hooks.server.ts` | Every request: host name check, session, redirect to the sign-in, security headers |
+| `src/lib/server/` | Accounts and sessions (own SQLite database with `node:sqlite`, scrypt hashes), limit of failed sign-ins, API client, the `shop-notify-ui` command |
+| `src/lib/i18n/` | All texts per language, checked for completeness by the type checker |
+| `src/lib/api-types.ts` | Types of the API responses, generated from [`api.schema.json`](api.schema.json) |
 
 ## Data flow of a poll
 
@@ -150,9 +161,10 @@ and the poll counts `restocked` and `sold_out`.
 | Notification services (SMTP, Telegram, ntfy, … via Apprise) | out | rendered messages and images | trusted with the content of the notifications |
 | SQLite database, heartbeat and log file | local | listing IDs and fields above; no credentials | local file system of the operator |
 | Optional [read-only API](api.md) (HTTP, `127.0.0.1:8080` by default) | in | GET requests; answers with the history from the database | **untrusted** requests – no authentication, so only for the same machine or a private network |
+| Optional [web UI](web-ui.md) (HTTPS via Caddy, nginx or Apache) | in | sign-in, page requests from browsers | **untrusted** – everything but `/login` needs a valid session; the UI reaches the API over an internal network only |
 
 The poller opens no network ports and needs no inbound connections; only the optional API
-listens on one.
+and web UI listen on one.
 
 ## Deployment
 
@@ -164,6 +176,10 @@ listens on one.
   sandboxed unit (dedicated user, read-only system, no new privileges, restricted
   system calls).
 - **Locally** with `uv run shop-notify`.
+- **Web UI** ([`ui/Dockerfile`](../ui/Dockerfile), [web-ui.md](web-ui.md)): Compose
+  profiles add the API, the UI and optionally Caddy for HTTPS. The UI image contains
+  the bundled app and Node.js without npm, runs as user `1000`; the API is only on an
+  internal network without internet access.
 
 ## Build and release
 

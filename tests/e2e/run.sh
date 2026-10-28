@@ -16,11 +16,17 @@
 #      (NOTIFY_EVENTS includes restocked)
 #   7. a second, hardened container serves the read-only API from the same database
 #      while the poller keeps running
+#   8. the web UI: an account is created with shop-notify-ui; signing in is needed, and
+#      requests for another host name are rejected
+#   9-11. the UI behind Caddy (the Caddyfile of the repository), nginx and Apache (the
+#      examples of docs/web-ui.md): sign in, the pages show the history, sign out
 #
-# Usage: tests/e2e/run.sh [IMAGE]   (default: shop-notify:ci; needs docker, curl, jq, python3)
+# Usage: tests/e2e/run.sh [IMAGE] [UI_IMAGE]
+#   (default: shop-notify:ci shop-notify-ui:ci; needs docker, curl, jq, openssl, python3)
 set -euo pipefail
 
 IMAGE=${1:-shop-notify:ci}
+UI_IMAGE=${2:-shop-notify-ui:ci}
 MAILPIT=axllent/mailpit:v1.31.6@sha256:23fe39e81bde596a918000b3135c0f85dc8bb4c9ea6be274b051143f3e300387
 ETSY_PORT=18080
 SMTP_PORT=11025
@@ -28,6 +34,12 @@ MAILPIT_API=http://localhost:18025/api/v1
 API_PORT=18081
 API=http://localhost:$API_PORT/api
 DIR=$(cd "$(dirname "$0")" && pwd)
+ROOT=$(cd "$DIR/../.." && pwd)
+# Reverse proxies in front of the UI; Caddy as in compose.yaml
+CADDY=$(sed -n 's/^ *image: \(caddy:.*\)$/\1/p' "$ROOT/compose.yaml")
+NGINX=nginx:1.30-alpine@sha256:47928bf67eb62a1863cb08d9ecb52d3e704304ba614eaee17884204677702951
+HTTPD=httpd:2.4.69-alpine@sha256:070da7661f0be8a05430b2c125c0cde9e53176b4048c813024021969a0e3893c
+UI_PASSWORD="e2e password $RANDOM$RANDOM"
 
 cleanup() {
   status=$?
@@ -36,8 +48,14 @@ cleanup() {
     docker logs shop-notify-e2e 2>&1 | tail -40 || true
     echo "--- API log ---"
     docker logs shop-notify-e2e-api 2>&1 | tail -20 || true
+    echo "--- UI log ---"
+    docker logs shop-notify-e2e-ui 2>&1 | tail -20 || true
+    echo "--- proxy log ---"
+    docker logs shop-notify-e2e-proxy 2>&1 | tail -20 || true
   fi
-  docker rm -f shop-notify-e2e shop-notify-e2e-api mailpit-e2e >/dev/null 2>&1 || true
+  docker rm -f shop-notify-e2e shop-notify-e2e-api shop-notify-e2e-ui shop-notify-e2e-proxy \
+    mailpit-e2e >/dev/null 2>&1 || true
+  [[ -n "${WORK:-}" ]] && rm -rf "$WORK"
   [[ -n "${MAIL:-}" ]] && rm -f "$MAIL"
   [[ -n "${ETSY_PID:-}" ]] && kill "$ETSY_PID" 2>/dev/null
   exit "$status"
@@ -169,5 +187,88 @@ check_api listings/1006 \
   "restocked listing not shown as listed"
 [[ $(curl -s -o /dev/null -w '%{http_code}' -X POST "$API/events") == 405 ]] \
   || fail "the API accepted a POST"
+
+echo "8. the web UI needs an account and only answers for its host name"
+WORK=$(mktemp -d)
+docker run -d --name shop-notify-e2e-ui --network host --read-only --tmpfs /data:uid=1000,gid=1000 \
+  --cap-drop ALL --security-opt no-new-privileges \
+  -e UI_DOMAIN=localhost -e API_URL="http://127.0.0.1:$API_PORT" \
+  -e ADDRESS_HEADER=x-forwarded-for -e XFF_DEPTH=1 "$UI_IMAGE" >/dev/null
+wait_for 30 curl -sf http://127.0.0.1:3000/healthz || fail "UI did not start"
+[[ $(curl -s -H "Host: localhost" http://127.0.0.1:3000/login) == *"No account has been set up yet"* ]] \
+  || fail "no hint to create an account"
+printf '%s\n' "$UI_PASSWORD" \
+  | docker exec -i shop-notify-e2e-ui shop-notify-ui set-password admin --password-stdin >/dev/null \
+  || fail "account not created"
+[[ $(curl -s -o /dev/null -w '%{http_code}' -H "Host: evil.example" http://127.0.0.1:3000/login) == 421 ]] \
+  || fail "request for another host name answered"
+
+# A test certificate for localhost at the path of the examples (after the host name changed)
+mkdir -p "$WORK/certs"
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost \
+  -addext subjectAltName=DNS:localhost -keyout "$WORK/certs/privkey.pem" \
+  -out "$WORK/certs/fullchain.pem" 2>/dev/null
+chmod 644 "$WORK/certs/"*.pem
+# example LANGUAGE – the code block of docs/web-ui.md, for localhost instead of the placeholder
+example() {
+  sed -n "/^\`\`\`$1\$/,/^\`\`\`\$/p" "$ROOT/docs/web-ui.md" | sed '1d;$d' | sed 's/shop\.example\.com/localhost/g'
+}
+
+UI=https://localhost
+# ui_flow PROXY – sign in through the proxy, read the pages, sign out
+ui_flow() {
+  local jar="$WORK/cookies" page="$WORK/page.html"
+  rm -f "$jar"
+  wait_for 30 curl -skf "$UI/healthz" || fail "$1: UI not reachable"
+  [[ $(curl -sk -o /dev/null -w '%{http_code} %{redirect_url}' "$UI/events") \
+    == "303 $UI/login?redirectTo=%2Fevents" ]] || fail "$1: not redirected to the login page"
+  [[ $(curl -sk -o /dev/null -w '%{http_code}' -H 'Accept: text/html' -H "Origin: $UI" \
+    --data 'username=admin&password=wrong' "$UI/login") == 400 ]] || fail "$1: wrong password accepted"
+  [[ $(curl -sk -c "$jar" -o /dev/null -w '%{http_code}' -H 'Accept: text/html' -H "Origin: $UI" \
+    --data-urlencode username=admin --data-urlencode "password=$UI_PASSWORD" "$UI/login") == 303 ]] \
+    || fail "$1: sign-in failed"
+  grep -q "__Host-session" "$jar" || fail "$1: no session cookie"
+  curl -skf -b "$jar" "$UI/" > "$page" || fail "$1: overview not shown"
+  grep -q "Last poll" "$page" || fail "$1: no last poll on the overview"
+  grep -q "<script" "$page" && fail "$1: the page contains a script"
+  curl -skf -b "$jar" "$UI/events?event=sold_out" | grep -q "Handmade test item 6" \
+    || fail "$1: sold-out event not listed"
+  curl -skf -b "$jar" "$UI/listings/1006" | grep -q "In the shop" \
+    || fail "$1: restocked listing not shown as in the shop"
+  curl -sk -b "$jar" -D - -o /dev/null "$UI/polls" | grep -qi "^content-security-policy: default-src 'none'" \
+    || fail "$1: no Content-Security-Policy"
+  [[ $(curl -sk -b "$jar" -o /dev/null -w '%{http_code}' -X POST -H "Origin: $UI" "$UI/logout") == 303 ]] \
+    || fail "$1: sign-out failed"
+  [[ $(curl -sk -b "$jar" -o /dev/null -w '%{http_code}' "$UI/") == 303 ]] \
+    || fail "$1: still signed in after signing out"
+  docker rm -f shop-notify-e2e-proxy >/dev/null
+}
+
+echo "9. the web UI behind Caddy"
+docker run -d --name shop-notify-e2e-proxy --network host --read-only --tmpfs /data --tmpfs /config \
+  --cap-drop ALL --cap-add NET_BIND_SERVICE --security-opt no-new-privileges \
+  -e UI_DOMAIN=localhost -e UI_UPSTREAM=127.0.0.1:3000 \
+  -e ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory \
+  -v "$ROOT/Caddyfile:/etc/caddy/Caddyfile:ro" "$CADDY" >/dev/null
+ui_flow Caddy
+
+echo "10. the web UI behind nginx"
+example nginx > "$WORK/nginx.conf"
+docker run -d --name shop-notify-e2e-proxy --network host \
+  -v "$WORK/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
+  -v "$WORK/certs:/etc/letsencrypt/live/localhost:ro" "$NGINX" >/dev/null
+ui_flow nginx
+
+echo "11. the web UI behind Apache"
+example apache > "$WORK/shop-notify.conf"
+# what a2enmod does on Debian, for the official image
+docker run --rm "$HTTPD" cat /usr/local/apache2/conf/httpd.conf \
+  | sed -E 's/^#(LoadModule (ssl|socache_shmcb|proxy|proxy_http|headers)_module )/\1/' > "$WORK/httpd.conf"
+printf 'Listen 443\nInclude conf/extra/shop-notify.conf\n' >> "$WORK/httpd.conf"
+docker run -d --name shop-notify-e2e-proxy --network host \
+  -v "$WORK/httpd.conf:/usr/local/apache2/conf/httpd.conf:ro" \
+  -v "$WORK/shop-notify.conf:/usr/local/apache2/conf/extra/shop-notify.conf:ro" \
+  -v "$WORK/certs:/etc/letsencrypt/live/localhost:ro" "$HTTPD" >/dev/null
+ui_flow Apache
 
 echo "OK"

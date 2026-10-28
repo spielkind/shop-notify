@@ -34,7 +34,36 @@ updates:
       prefix: ci
     labels: [dependencies, github_actions]
 
+  # Web UI dependencies (only needed to build it); one grouped pull request per week
+  - package-ecosystem: npm
+    directory: /ui
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      ui:
+        update-types: [minor, patch]
+      ui-security:
+        applies-to: security-updates
+        patterns: ["*"]
+    commit-message:
+      prefix: build
+    labels: [dependencies]
+
+  # Base images of the poller and the web UI
   - package-ecosystem: docker
+    directories: [/, /ui]
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: build
+    labels: [dependencies, docker]
+
+  # Caddy in compose.yaml
+  - package-ecosystem: docker-compose
     directory: /
     schedule:
       interval: weekly

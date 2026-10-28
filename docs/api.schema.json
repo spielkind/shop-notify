@@ -3,7 +3,6 @@
     "Error": {
       "properties": {
         "error": {
-          "title": "Error",
           "type": "string"
         }
       },
@@ -16,29 +15,23 @@
     "Event": {
       "properties": {
         "id": {
-          "title": "Id",
           "type": "integer"
         },
         "listing_id": {
-          "title": "Listing Id",
           "type": "integer"
         },
         "time": {
           "format": "date-time",
-          "title": "Time",
           "type": "string"
         },
         "event": {
-          "title": "Event",
           "type": "string"
         },
         "details": {
           "additionalProperties": true,
-          "title": "Details",
           "type": "object"
         },
         "title": {
-          "title": "Title",
           "type": "string"
         }
       },
@@ -59,7 +52,6 @@
           "items": {
             "$ref": "#/$defs/Event"
           },
-          "title": "Events",
           "type": "array"
         },
         "next": {
@@ -70,8 +62,7 @@
             {
               "type": "null"
             }
-          ],
-          "title": "Next"
+          ]
         }
       },
       "required": [
@@ -84,15 +75,12 @@
     "Health": {
       "properties": {
         "status": {
-          "title": "Status",
           "type": "string"
         },
         "version": {
-          "title": "Version",
           "type": "string"
         },
         "schema_version": {
-          "title": "Schema Version",
           "type": "integer"
         },
         "last_poll": {
@@ -114,8 +102,7 @@
               "type": "null"
             }
           ],
-          "default": null,
-          "title": "Error"
+          "default": null
         }
       },
       "required": [
@@ -131,19 +118,15 @@
       "description": "Subset of an Etsy v3 ShopListing; only these fields are stored locally.",
       "properties": {
         "listing_id": {
-          "title": "Listing Id",
           "type": "integer"
         },
         "title": {
-          "title": "Title",
           "type": "string"
         },
         "url": {
-          "title": "Url",
           "type": "string"
         },
         "last_modified_timestamp": {
-          "title": "Last Modified Timestamp",
           "type": "integer"
         },
         "state_timestamp": {
@@ -155,8 +138,7 @@
               "type": "null"
             }
           ],
-          "default": null,
-          "title": "State Timestamp"
+          "default": null
         },
         "created_timestamp": {
           "anyOf": [
@@ -167,8 +149,7 @@
               "type": "null"
             }
           ],
-          "default": null,
-          "title": "Created Timestamp"
+          "default": null
         },
         "original_creation_timestamp": {
           "anyOf": [
@@ -179,8 +160,7 @@
               "type": "null"
             }
           ],
-          "default": null,
-          "title": "Original Creation Timestamp"
+          "default": null
         },
         "price": {
           "anyOf": [
@@ -202,8 +182,7 @@
               "type": "null"
             }
           ],
-          "default": null,
-          "title": "Quantity"
+          "default": null
         },
         "image_url": {
           "anyOf": [
@@ -214,8 +193,7 @@
               "type": "null"
             }
           ],
-          "default": null,
-          "title": "Image Url"
+          "default": null
         }
       },
       "required": [
@@ -236,7 +214,6 @@
           "items": {
             "$ref": "#/$defs/Event"
           },
-          "title": "Events",
           "type": "array"
         }
       },
@@ -250,15 +227,12 @@
     "Money": {
       "properties": {
         "amount": {
-          "title": "Amount",
           "type": "integer"
         },
         "divisor": {
-          "title": "Divisor",
           "type": "integer"
         },
         "currency_code": {
-          "title": "Currency Code",
           "type": "string"
         }
       },
@@ -273,12 +247,10 @@
     "Poll": {
       "properties": {
         "id": {
-          "title": "Id",
           "type": "integer"
         },
         "time": {
           "format": "date-time",
-          "title": "Time",
           "type": "string"
         },
         "reported": {
@@ -289,8 +261,7 @@
             {
               "type": "null"
             }
-          ],
-          "title": "Reported"
+          ]
         },
         "received": {
           "anyOf": [
@@ -300,8 +271,7 @@
             {
               "type": "null"
             }
-          ],
-          "title": "Received"
+          ]
         },
         "complete": {
           "anyOf": [
@@ -311,35 +281,27 @@
             {
               "type": "null"
             }
-          ],
-          "title": "Complete"
+          ]
         },
         "new": {
-          "title": "New",
           "type": "integer"
         },
         "back": {
-          "title": "Back",
           "type": "integer"
         },
         "missing": {
-          "title": "Missing",
           "type": "integer"
         },
         "gone": {
-          "title": "Gone",
           "type": "integer"
         },
         "filtered": {
-          "title": "Filtered",
           "type": "integer"
         },
         "restocked": {
-          "title": "Restocked",
           "type": "integer"
         },
         "sold_out": {
-          "title": "Sold Out",
           "type": "integer"
         },
         "error": {
@@ -350,8 +312,7 @@
             {
               "type": "null"
             }
-          ],
-          "title": "Error"
+          ]
         }
       },
       "required": [
@@ -378,7 +339,6 @@
           "items": {
             "$ref": "#/$defs/Poll"
           },
-          "title": "Polls",
           "type": "array"
         },
         "next": {
@@ -389,8 +349,7 @@
             {
               "type": "null"
             }
-          ],
-          "title": "Next"
+          ]
         }
       },
       "required": [
@@ -407,17 +366,14 @@
           "$ref": "#/$defs/Listing"
         },
         "status": {
-          "title": "Status",
           "type": "string"
         },
         "first_seen": {
           "format": "date-time",
-          "title": "First Seen",
           "type": "string"
         },
         "last_seen": {
           "format": "date-time",
-          "title": "Last Seen",
           "type": "string"
         },
         "missing_since": {
@@ -429,8 +385,7 @@
             {
               "type": "null"
             }
-          ],
-          "title": "Missing Since"
+          ]
         },
         "gone_since": {
           "anyOf": [
@@ -441,8 +396,7 @@
             {
               "type": "null"
             }
-          ],
-          "title": "Gone Since"
+          ]
         },
         "sold_out_since": {
           "anyOf": [
@@ -453,8 +407,7 @@
             {
               "type": "null"
             }
-          ],
-          "title": "Sold Out Since"
+          ]
         },
         "notified": {
           "anyOf": [
@@ -465,11 +418,9 @@
             {
               "type": "null"
             }
-          ],
-          "title": "Notified"
+          ]
         },
         "filtered": {
-          "title": "Filtered",
           "type": "boolean"
         },
         "pending": {
@@ -480,8 +431,7 @@
             {
               "type": "null"
             }
-          ],
-          "title": "Pending"
+          ]
         }
       },
       "required": [
