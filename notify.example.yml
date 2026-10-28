@@ -19,3 +19,12 @@ urls:
   # Telegram: create a bot with @BotFather, then add it to a chat
   # - tgram://BOT_TOKEN/CHAT_ID
   # Add ?album=yes to get several pictures as one album (NOTIFY_IMAGES_IN_SUMMARY)
+
+  # Optional recipient groups, enabled with NOTIFY_DIGEST=family:daily,oma:weekly.
+  # A service may have only ONE configured digest-group tag; untagged services
+  # above remain immediate. Quiet hours, if set, gate every service.
+  # - ntfys://ntfy.sh/family-change-me:
+  #     tag: family
+  # - mailtos://you:app-password@gmail.com:
+  #     - to: oma@example.com
+  #       tag: oma

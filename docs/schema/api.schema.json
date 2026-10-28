@@ -528,5 +528,5 @@
     }
   },
   "title": "Shop Notify API",
-  "description": "Responses of the read-only API, schema version 4"
+  "description": "Responses of the read-only API, schema version 5"
 }

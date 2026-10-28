@@ -17,7 +17,7 @@ docker compose up -d
 ```
 
 - To use `notify.yml`, uncomment its volume in `compose.yaml` and set `NOTIFY_CONFIG=/config/notify.yml` in `.env`.
-- Set `TZ=Europe/Berlin` (or your time zone) in `.env` – the container runs in UTC otherwise.
+- Set `TZ=Europe/Berlin` (or your time zone) in `.env` – the container runs in UTC otherwise. [Quiet hours and digests](notifications.md#quiet-hours-and-recipient-digests) also use this time zone; the poller logs the effective zone at startup.
 - Database and heartbeat live in `./data`. The container runs as UID 1000, so `data/` must be writable for that user – on a Raspberry Pi the default user already has UID 1000.
 - Logs: `docker compose logs -f` · Status: `docker compose ps` shows `healthy`/`unhealthy`
 - Update: `docker compose pull && docker compose up -d` · Build locally: `docker compose up -d --build`

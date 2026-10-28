@@ -19,8 +19,83 @@ For a single target, `NOTIFY_URLS` is enough, e.g. `NOTIFY_URLS="ntfys://ntfy.sh
 
 - **E-mail** gets one HTML message with all new items and their pictures. **Push and chat services** that support attachments (ntfy, Telegram, Signal, Pushover, …) get **one message per item with its picture** – up to `NOTIFY_IMAGES_MAX` items per poll, above that one summary message. Set `NOTIFY_IMAGES_IN_SUMMARY=true` to attach the pictures to the summary as well; for Telegram add `?album=yes` to the URL to get them as one album (ntfy shows only the first picture).
 - The configuration is checked at startup; credentials are masked in the log.
-- If all targets fail, the items stay *new* and are sent again with the next poll. If only some fail, a warning is logged.
+- Deliveries are stored per target. Failed targets retry on the next eligible poll; successful targets are not retried just because another target failed. A partial failure is recorded as a poll error.
 - `notify.yml` and `.env` contain passwords – both are ignored by git and never copied into the Docker image.
+
+## Quiet hours and recipient digests
+
+Both are optional and off by default. For example, in `.env`:
+
+```dotenv
+NOTIFY_QUIET_HOURS=22:00-07:00
+NOTIFY_DIGEST=family:daily,oma:weekly
+NOTIFY_DIGEST_TIME=08:00
+NOTIFY_DIGEST_DAY=mon
+```
+
+Use Apprise tags in `notify.yml` to assign services to recipient groups:
+
+```yaml
+urls:
+  - ntfys://ntfy.sh/family-random-topic:
+      tag: family
+  - mailtos://you:app-password@gmail.com:
+      - to: oma@example.com
+        tag: oma
+  - ntfys://ntfy.sh/my-immediate-topic
+```
+
+- `family` gets a daily summary at 08:00; `oma` gets a weekly summary on Monday
+  at 08:00. Daily/weekly are the supported cadences. A service may have **at most
+  one configured digest-group tag**; ambiguous services are rejected at startup.
+  Other tags don't change delivery timing. Untagged destinations and the console
+  remain immediate, subject to quiet hours.
+- All times use the poller's local timezone (`TZ` in Docker, otherwise the system
+  timezone), not the recipient's. Times must be `HH:MM`; days are `mon` through
+  `sun`. Quiet hours include the start and exclude the end, may cross midnight,
+  and must have different start/end times. DST follows local wall-clock time.
+- Quiet hours gate **every route**, including immediate targets. Polling, state
+  tracking and filtering continue. A digest due during quiet hours is delivered
+  on the first successful poll after quiet hours, not the next day's slot.
+- Slots and pending deliveries survive restarts. A new group starts at its next
+  scheduled slot; empty digests are not sent. Downtime produces one current
+  summary, not one message for every missed day/week. Failed digest targets retry
+  on subsequent eligible polls without waiting another day/week. New arrivals
+  after that digest attempt belong to the next slot, not extra summaries for
+  targets that already succeeded.
+- Digests and batches held by quiet hours always use summary mode, even below
+  `NOTIFY_IMAGES_MAX`, including after a restart. Ordinary immediate batches keep
+  their per-item behavior. Summary image attachments still follow `NOTIFY_IMAGES`
+  and `NOTIFY_IMAGES_IN_SUMMARY`.
+- Pending events coalesce by listing and target, using the usual event priority.
+  Messages show the latest stored title, price, quantity and image. Obsolete price
+  changes are dropped when the current price no longer meets the configured
+  threshold/direction relative to their reference. A queued `new` notification is
+  dropped for every still-waiting target once the listing is gone or known sold out,
+  even if another target in the same group already received it. Actual `sold_out`
+  events are not discarded by this cleanup. A brief unexplained absence is not
+  enough to drop `new` until `FORGET_AFTER_HOURS` expires.
+- The first-run recording/suppression behavior is unchanged (the initial console
+  listing is also suppressed during quiet hours). Upgrading fans out
+  existing pending notifications to the configured routes. Already-notified
+  listings are **not backfilled** when adding a group. During the one-time migration,
+  groups inherit the legacy notified price baseline, or the current price if none
+  exists. Groups added after initialization start from the **current listing price**;
+  existing groups keep their baselines. Future deliveries update each group's
+  baseline independently.
+- With no delivery routes, polls do not acknowledge queued notifications, and the
+  initial fan-out of legacy pending notifications waits until a route is enabled.
+  A first-run-only console is not a delivery route; first-run suppression and
+  filtering still apply.
+- With delivery routes enabled, removing/reassigning a target drops its old queued
+  deliveries. Changing its URL or credentials creates a new target identity; old
+  deliveries aren't replayed.
+  Restart the poller after configuration changes. Pending slots are retained for
+  existing groups, so cadence/time changes take effect after their current slot.
+- This is **not exactly-once delivery**: a crash after a service accepts a message
+  but before SQLite records success may cause a duplicate. A per-item batch that
+  partly fails may also repeat items for that failed target. No credentials are
+  stored in the outbox; target identities are hashes.
 
 ## Testing notifications
 Send a sample notification with two example items to all configured targets – no Etsy key needed, the database is not touched:

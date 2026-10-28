@@ -25,6 +25,7 @@ from shop_notify.notifications import (
     MultiNotifier,
     NotificationError,
 )
+from shop_notify.scheduling import Schedule
 from shop_notify.systemd import SystemdNotifier
 from tests.helpers import make_listing, sync
 
@@ -346,6 +347,7 @@ def test_run_passes_settings_to_each_poll(
 
     [kwargs] = calls
     filters = kwargs.pop("filters")
+    assert kwargs.pop("schedule") == Schedule()
     assert kwargs == {
         "notify_existing": True,
         "forget_after_hours": 2.5,
