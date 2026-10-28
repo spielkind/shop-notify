@@ -115,7 +115,7 @@ jobs:
           cache-dependency-path: ui/package-lock.json
       - run: npm ci --ignore-scripts --no-fund
       - run: npm audit --audit-level=moderate
-      - name: Types match docs/api.schema.json
+      - name: Types match docs/schema/api.schema.json
         run: |
           npm run api-types
           git diff --exit-code src/lib/api-types.ts

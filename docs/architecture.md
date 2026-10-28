@@ -7,8 +7,8 @@ second process serves the recorded history as a [read-only JSON API](api.md), an
 [web UI](web-ui.md) shows it to signed-in users.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="how-it-works-dark.svg">
-  <img alt="Shop Notify polls the Etsy Open API, compares the active listings with its SQLite database and sends new items via Apprise to e-mail, push and chat services." src="how-it-works-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="images/how-it-works-dark.svg">
+  <img alt="Shop Notify polls the Etsy Open API, compares the active listings with its SQLite database and sends new items via Apprise to e-mail, push and chat services." src="images/how-it-works-light.svg">
 </picture>
 
 ## Components
@@ -21,7 +21,7 @@ All modules are in [`src/shop_notify/`](../src/shop_notify):
 | `api.py` | Read-only JSON API of the history (`shop-notify api`, see [api.md](api.md)): a small HTTP server from the standard library; every request opens the database read-only |
 | `config.py` | Settings from environment variables and `.env` ([pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)); credentials are `SecretStr` and never printed |
 | `etsy.py` | `EtsyClient`: HTTP client for the Etsy Open API v3 ([httpx](https://www.python-httpx.org/)) with pagination, retries when rate limited, quota tracking; validates every response |
-| `models.py` | `Listing` and `Money` – the only listing fields that are used and stored |
+| `models.py` | `Listing` and `Money` – the only listing fields that are used and stored –, `ListingImage` (the main image) and `Notice` (why a listing is notified) |
 | `db.py` | `ListingStore`: SQLite database of all listings, their history and the polls, with automatic schema migration (see [Database](#database)) |
 | `filters.py` | `Filters`: include/exclude rules (keywords, regular expressions) and price limits from `.env` and `filters.yml` (see [filters.md](filters.md)) |
 | `notifications.py` | `MessageRenderer` (Jinja templates, en/de, plain text and HTML), `AppriseNotifier` (e-mail: one HTML mail; push/chat: one message per item with image), `ConsoleNotifier` |
@@ -36,7 +36,7 @@ The web UI is a separate [SvelteKit](https://svelte.dev/docs/kit) app in [`ui/`]
 | `src/hooks.server.ts` | Every request: host name check, session, redirect to the sign-in, security headers |
 | `src/lib/server/` | Accounts and sessions (own SQLite database with `node:sqlite`, scrypt hashes), limit of failed sign-ins, API client, the `shop-notify-ui` command |
 | `src/lib/i18n/` | All texts per language, checked for completeness by the type checker |
-| `src/lib/api-types.ts` | Types of the API responses, generated from [`api.schema.json`](api.schema.json) |
+| `src/lib/api-types.ts` | Types of the API responses, generated from [`api.schema.json`](schema/api.schema.json) |
 
 ## Data flow of a poll
 
@@ -66,16 +66,17 @@ The web UI is a separate [SvelteKit](https://svelte.dev/docs/kit) app in [`ui/`]
    every poll and notified once they pass (e.g. after a title change).
 5. On the first run (empty database) the new listings are only recorded and printed to
    the console. Otherwise the notification is rendered with the stored images and sent
-   to every target. Only after that are the listings marked as notified – if sending fails, they
-   are sent again with the next poll.
-6. The poll is recorded (counts, completeness, changes, errors), and a heartbeat file is updated (`healthcheck`) and, under systemd, the watchdog is
-   notified. The process waits `POLL_INTERVAL` seconds and starts again.
+   to every target. Only after that are the listings marked as notified – if sending
+   fails, they are sent again with the next poll.
+6. The poll is recorded (counts, completeness, changes, errors), a heartbeat file is
+   updated (`healthcheck`) and, under systemd, the watchdog is notified. The process
+   waits `POLL_INTERVAL` seconds and starts again.
 
 The life cycle of a listing:
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="lifecycle-dark.svg">
-  <img alt="Lifecycle of a listing: New, then Notified once sent, then Gone once it has been gone from the shop for 24 hours; if it comes back it is notified as back in the shop. Failed notifications are retried with the next poll." src="lifecycle-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="images/lifecycle-dark.svg">
+  <img alt="Lifecycle of a listing: New, then Notified once sent, then Gone once it has been gone from the shop for 24 hours; if it comes back it is notified as back in the shop. Failed notifications are retried with the next poll." src="images/lifecycle-light.svg">
 </picture>
 
 ## Database

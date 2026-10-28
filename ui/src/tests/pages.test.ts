@@ -162,6 +162,7 @@ describe('polls', () => {
 });
 
 describe('listings', () => {
+	const sorts = ['newest', 'oldest', 'price_asc', 'price_desc', 'title', 'changed', 'stock'];
 	const statuses = ['listed', 'missing', 'sold_out', 'gone', 'all'].map((name) => ({
 		name,
 		href: `?status=${name}`
@@ -189,10 +190,10 @@ describe('listings', () => {
 					1004
 				)
 			]),
-			filter: { status: 'all', q: '' },
+			filter: { status: 'all', q: '', sort: 'price_asc' },
+			sorts,
 			statuses,
-			older: '?status=all&before=1004',
-			newest: null
+			more: true
 		});
 		// thumbnails with the large image for wide screens, loaded lazily from Etsy only
 		expect(body).toContain(
@@ -212,19 +213,22 @@ describe('listings', () => {
 		// the tabs with the counts; "all" is the current one
 		expect(body).toContain('In the shop <span class="muted">125</span>');
 		expect(body).toMatch(/aria-current="page">All <span class="muted">130<\/span>/);
-		expect(body).toContain('<a href="?status=all&amp;before=1004">More listings →</a>');
+		// the order can be chosen
+		expect(body).toContain('<option value="price_asc" selected="">Lowest price</option>');
+		expect(body).toContain('<option value="stock">Most in stock</option>');
+		expect(body).toContain('Only the first 4 are shown – search to narrow them down.');
 	});
 
 	it('says when nothing matches', () => {
 		const body = html(Listings, {
 			...listingPage([]),
-			filter: { status: 'gone', q: 'x' },
+			filter: { status: 'gone', q: 'x', sort: 'newest' },
+			sorts,
 			statuses,
-			older: null,
-			newest: '?status=gone'
+			more: false
 		});
 		expect(body).toContain('No listings match.');
-		expect(body).toContain('<a href="?status=gone">← First listings</a>');
+		expect(body).not.toContain('Only the first');
 		expect(body).toContain('name="status" value="gone"');
 	});
 });

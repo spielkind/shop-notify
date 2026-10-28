@@ -112,7 +112,7 @@ class _SchemaWithoutFieldTitles(GenerateJsonSchema):
 
 
 def schema() -> dict[str, Any]:
-    """JSON schema of the responses, kept in docs/api.schema.json for the web UI."""
+    """JSON schema of the responses, kept in docs/schema/api.schema.json for the web UI."""
     _, result = TypeAdapter.json_schemas(
         [(t.__name__, "serialization", _ADAPTERS[t]) for t in RESPONSES],
         title="Shop Notify API",
@@ -144,6 +144,9 @@ class _ListingQuery(BaseModel):
 
     status: Literal["listed", "missing", "sold_out", "gone", "all"] = "listed"
     q: str | None = Field(default=None, min_length=1, max_length=200)
+    sort: Literal["newest", "oldest", "price_asc", "price_desc", "title", "changed", "stock"] = (
+        "newest"
+    )
     before: int | None = Field(default=None, gt=0)
     limit: int = Field(default=100, ge=1, le=MAX_LIMIT)
 
@@ -228,10 +231,13 @@ def _events(db_path: Path, _match: re.Match[str], params: dict[str, str]) -> Pay
 
 def _listings(db_path: Path, _match: re.Match[str], params: dict[str, str]) -> Payload:
     query = _validate(_ListingQuery, params)
+    if query.before is not None and query.sort != "newest":
+        raise _BadRequestError("before: only works with sort=newest")
     with ListingStore(db_path, readonly=True) as store:
         listings = store.listings(
             status=None if query.status == "all" else query.status,
             text=query.q,
+            sort=query.sort,
             before=query.before,
             limit=query.limit + 1,
         )

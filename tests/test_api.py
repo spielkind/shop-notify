@@ -21,7 +21,7 @@ from shop_notify.db import SCHEMA_VERSION, ListingStore
 from shop_notify.models import ListingImage, Money
 from tests.helpers import make_listing, sync
 
-SCHEMA_FILE = Path(__file__).parent.parent / "docs" / "api.schema.json"
+SCHEMA_FILE = Path(__file__).parent.parent / "docs" / "schema" / "api.schema.json"
 
 
 def at(seconds: float) -> Any:
@@ -192,6 +192,8 @@ def test_listings_in_the_shop_by_default(server: httpx.Client) -> None:
         ({"status": "gone"}, []),
         ({"status": "all", "q": "ring"}, [1]),
         ({"status": "all", "limit": 1, "before": 2}, [1]),
+        ({"status": "all", "sort": "oldest"}, [1, 2]),
+        ({"status": "all", "sort": "title"}, [2, 1]),
     ],
 )
 def test_listings_can_be_filtered(
@@ -226,6 +228,8 @@ def test_listings_with_their_images(server: httpx.Client, db: Path) -> None:
         ("status=sold", "status: Input should be 'listed', 'missing', 'sold_out', 'gone' or 'all'"),
         ("since=2026-01-01T00:00:00Z", "since: Extra inputs are not permitted"),
         ("limit=0", "limit: Input should be greater than or equal to 1"),
+        ("sort=price", "sort: Input should be 'newest', 'oldest'"),
+        ("sort=title&before=2", "before: only works with sort=newest"),
     ],
 )
 def test_invalid_listing_parameters(server: httpx.Client, query: str, error: str) -> None:
@@ -390,5 +394,5 @@ def test_main_runs_the_api(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
 
 def test_the_documented_schema_is_up_to_date() -> None:
     assert json.loads(SCHEMA_FILE.read_text(encoding="utf-8")) == api.schema(), (
-        "Update it with: uv run python -m shop_notify.api > docs/api.schema.json"
+        "Update it with: uv run python -m shop_notify.api > docs/schema/api.schema.json"
     )

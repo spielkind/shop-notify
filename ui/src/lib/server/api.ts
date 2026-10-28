@@ -21,9 +21,21 @@ export interface EventQuery {
 export interface ListingQuery {
 	status?: 'listed' | 'missing' | 'sold_out' | 'gone' | 'all';
 	q?: string;
+	sort?: ListingSort;
 	before?: number;
 	limit?: number;
 }
+
+export const LISTING_SORTS = [
+	'newest',
+	'oldest',
+	'price_asc',
+	'price_desc',
+	'title',
+	'changed',
+	'stock'
+] as const;
+export type ListingSort = (typeof LISTING_SORTS)[number];
 
 export interface PollQuery {
 	before?: number;

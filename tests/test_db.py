@@ -13,6 +13,7 @@ import pytest
 
 from shop_notify.db import (
     SCHEMA_VERSION,
+    SORTS,
     DatabaseUnavailableError,
     Event,
     ListingStore,
@@ -606,6 +607,43 @@ def test_listings_by_status_newest_first(store: ListingStore) -> None:
     first = store.listings(limit=3)
     assert stored_ids(first) == [4, 3, 2]
     assert stored_ids(store.listings(limit=3, before=first[-1].listing.listing_id)) == [1]
+
+
+def test_listings_in_every_order(store: ListingStore) -> None:
+    def item(
+        listing_id: int, title: str, price: Money | None, changed: int, stock: int | None
+    ) -> Listing:
+        listing = make_listing(listing_id, title)
+        return listing.model_copy(
+            update={"price": price, "last_modified_timestamp": changed, "quantity": stock}
+        )
+
+    with at(100):
+        sync(store, [item(1, "b", Money(amount=500, divisor=100, currency_code="EUR"), 30, 2)])
+    with at(200):
+        sync(
+            store,
+            [
+                item(1, "b", Money(amount=500, divisor=100, currency_code="EUR"), 30, 2),
+                # 4.50 is less than 5.00, although the amount is larger
+                item(2, "A", Money(amount=4500, divisor=1000, currency_code="EUR"), 10, None),
+                item(3, "c", None, 20, 5),
+            ],
+        )
+    expected = {
+        "newest": [3, 2, 1],
+        "oldest": [1, 2, 3],
+        "price_asc": [2, 1, 3],
+        "price_desc": [1, 2, 3],
+        "title": [2, 1, 3],
+        "changed": [1, 3, 2],
+        "stock": [3, 1, 2],
+    }
+    assert set(expected) == set(SORTS)
+    for sort, ids in expected.items():
+        assert stored_ids(store.listings(sort=sort)) == ids, sort
+    with pytest.raises(ValueError, match="before only works"):
+        store.listings(sort="title", before=1)
 
 
 def test_listing_counts_with_missing_and_sold_out(store: ListingStore) -> None:

@@ -275,28 +275,36 @@ describe('polls', () => {
 });
 
 describe('listings', () => {
-	it('filters by status and title and links the pages', async () => {
+	it('filters by status and title, sorts and keeps both in the tabs', async () => {
 		const { requests } = testContext(
 			api({ '/api/listings': [200, page([storedListing()], 900)] })
 		);
 		const data = await loaded(listings.load, {
-			url: new URL('https://shop.example.com/listings?status=sold_out&q=ring&before=950')
+			url: new URL('https://shop.example.com/listings?status=sold_out&q=ring&sort=price_asc')
 		});
-		expect(requests[0]!.search).toBe('?status=sold_out&q=ring&before=950&limit=60');
-		expect(data.filter).toEqual({ status: 'sold_out', q: 'ring' });
+		expect(requests[0]!.search).toBe('?status=sold_out&q=ring&sort=price_asc&limit=500');
+		expect(data.filter).toEqual({ status: 'sold_out', q: 'ring', sort: 'price_asc' });
 		expect(data.counts).toEqual({ listed: 125, missing: 0, sold_out: 3, gone: 2 });
-		expect(data.statuses).toContainEqual({ name: 'gone', href: '?status=gone&q=ring' });
-		expect(data.older).toBe('?status=sold_out&q=ring&before=900');
-		expect(data.newest).toBe('?status=sold_out&q=ring');
+		expect(data.statuses).toContainEqual({
+			name: 'gone',
+			href: '?status=gone&q=ring&sort=price_asc'
+		});
+		expect(data.sorts).toContain('stock');
+		// more than fit on the page
+		expect(data.more).toBe(true);
 	});
 
-	it('shows the listings in the shop by default', async () => {
+	it('shows the listings in the shop, the newest first, by default', async () => {
 		const { requests } = testContext(api({ '/api/listings': [200, page([])] }));
 		const data = await loaded(listings.load, {
-			url: new URL('https://shop.example.com/listings?status=bogus')
+			url: new URL('https://shop.example.com/listings?status=bogus&sort=bogus')
 		});
-		expect(requests[0]!.search).toBe('?status=listed&limit=60');
-		expect([data.filter.status, data.older, data.newest]).toEqual(['listed', null, null]);
+		expect(requests[0]!.search).toBe('?status=listed&sort=newest&limit=500');
+		expect([data.filter.status, data.filter.sort, data.more]).toEqual([
+			'listed',
+			'newest',
+			false
+		]);
 		expect(data.statuses[0]).toEqual({ name: 'listed', href: '?status=listed' });
 	});
 });

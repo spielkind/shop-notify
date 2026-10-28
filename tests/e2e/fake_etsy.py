@@ -26,7 +26,7 @@ from urllib.parse import parse_qs, urlparse
 
 SHOP_ID = 4711
 SHOP_NAME = "TestShop"
-IMAGE = Path(__file__).resolve().parents[2] / "docs" / "sample-item.png"
+IMAGE = Path(__file__).resolve().parents[2] / "docs" / "images" / "sample-item.png"
 
 listings: list[dict[str, object]] = []
 port = 0

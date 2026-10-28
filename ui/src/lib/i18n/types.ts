@@ -1,3 +1,5 @@
+import type { ListingSort } from '#lib/server/api.ts';
+
 /**
  * All texts of the UI. Every language implements this interface completely, so the
  * type check fails if a translation is missing (see docs/web-ui.md, "Languages").
@@ -46,8 +48,9 @@ export interface Messages {
 		search: string;
 		apply: string;
 		none: string;
-		older: string;
-		newest: string;
+		sort: string;
+		sorts: Record<ListingSort, string>;
+		tooMany: (shown: number) => string;
 		inStock: (n: number) => string;
 		noImage: string;
 	};

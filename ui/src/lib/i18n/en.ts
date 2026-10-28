@@ -47,8 +47,17 @@ export const en: Messages = {
 		search: 'Title contains',
 		apply: 'Show',
 		none: 'No listings match.',
-		older: 'More listings',
-		newest: 'First listings',
+		sort: 'Sort by',
+		sorts: {
+			newest: 'Newest first',
+			oldest: 'Oldest first',
+			price_asc: 'Lowest price',
+			price_desc: 'Highest price',
+			title: 'Title',
+			changed: 'Last changed',
+			stock: 'Most in stock'
+		},
+		tooMany: (shown) => `Only the first ${shown} are shown – search to narrow them down.`,
 		inStock: (n) => `${n} in stock`,
 		noImage: 'No image'
 	},

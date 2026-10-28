@@ -174,6 +174,20 @@ STATUSES = {
     "gone": "gone_since IS NOT NULL",
 }
 
+_PRICE = "json_extract(result, '$.price.amount') * 1.0 / json_extract(result, '$.price.divisor')"
+#: The orders of ``ListingStore.listings``; ties are broken by the listing ID.
+SORTS = {
+    "newest": "first_seen DESC, listing_id DESC",
+    "oldest": "first_seen, listing_id",
+    "price_asc": f"{_PRICE} IS NULL, {_PRICE}, listing_id",
+    "price_desc": f"{_PRICE} IS NULL, {_PRICE} DESC, listing_id",
+    "title": "json_extract(result, '$.title') COLLATE NOCASE, listing_id",
+    "changed": "json_extract(result, '$.last_modified_timestamp') IS NULL,"
+    " json_extract(result, '$.last_modified_timestamp') DESC, listing_id DESC",
+    "stock": "json_extract(result, '$.quantity') IS NULL,"
+    " json_extract(result, '$.quantity') DESC, listing_id",
+}
+
 _STORED_COLUMNS = """
     result, first_seen, last_seen, missing_since, gone_since, sold_out_since,
     notified_date, filtered, pending, image_url, thumbnail_url
@@ -802,15 +816,18 @@ class ListingStore:
         *,
         status: str | None = None,
         text: str | None = None,
+        sort: str = "newest",
         before: int | None = None,
         limit: int | None = None,
     ) -> list[StoredListing]:
-        """The listings, the newest (first seen) first.
+        """The listings in the order ``sort`` (a key of ``SORTS``), the newest by default.
 
         ``status`` (a key of ``STATUSES``) and ``text`` (in the title, ignoring the case of
         ASCII letters) filter them; ``before`` keeps those after the listing with this ID
-        in this order, to page through them ``limit`` at a time.
+        in the order ``newest``, to page through them ``limit`` at a time.
         """
+        if before is not None and sort != "newest":
+            raise ValueError("before only works with the order newest")
         query = f"SELECT {_STORED_COLUMNS} FROM listings WHERE 1"
         params: list[Any] = []
         if status is not None:
@@ -824,7 +841,7 @@ class ListingStore:
                 " (SELECT first_seen, listing_id FROM listings WHERE listing_id = ?)"
             )
             params.append(before)
-        query += " ORDER BY first_seen DESC, listing_id DESC"
+        query += f" ORDER BY {SORTS[sort]}"  # only the constant orders above
         if limit is not None:
             query += " LIMIT ?"
             params.append(limit)
