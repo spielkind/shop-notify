@@ -22,11 +22,15 @@ describe('Api', () => {
 		await api.polls();
 		await api.listing(42);
 		await api.events();
+		await api.listings({ status: 'all', q: 'ring', limit: 60 });
+		await api.listings();
 		expect(fetch.mock.calls.map((call) => (call as unknown[])[0])).toEqual([
 			'http://api:8080/api/events?event=new%2Cback&listing_id=7&limit=50',
 			'http://api:8080/api/polls',
 			'http://api:8080/api/listings/42',
-			'http://api:8080/api/events'
+			'http://api:8080/api/events',
+			'http://api:8080/api/listings?status=all&q=ring&limit=60',
+			'http://api:8080/api/listings'
 		]);
 		expect((fetch.mock.calls[0] as unknown[])[1]).toEqual({ signal: expect.any(AbortSignal) });
 	});

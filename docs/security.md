@@ -48,6 +48,9 @@ Users should be aware of these limits:
   history – titles, prices and poll errors. It listens on `127.0.0.1` by default and
   publishes no port in `compose.yaml`; to reach it from elsewhere, put a reverse proxy
   with authentication in front of it.
+- **The web UI's pictures come from Etsy.** The browser loads them directly from
+  `i.etsystatic.com` (without a referrer), so Etsy can see the address of whoever looks
+  at the listings page.
 - **All accounts of the web UI see everything.** There are no roles; every account
   can read the whole history. Accounts are managed by whoever can run commands on the
   server.
@@ -75,7 +78,7 @@ Users should be aware of these limits:
 | Slow regular expressions (ReDoS) | filters | patterns come from the operator, titles are at most 140 characters; invalid patterns are rejected at startup |
 | Guessing passwords | web UI sign-in | at least 12 characters; scrypt hashes (N=2^15, r=8, p=3); at most 5 failed sign-ins per account and 20 per client address in 15 minutes; the same answer and about the same time for unknown accounts |
 | Stolen or forged sessions | web UI | 256-bit random tokens, stored only as SHA-256 hashes; `__Host-` cookie with `HttpOnly`, `Secure` and `SameSite=Lax`; expire after `UI_SESSION_DAYS`; ended by signing out, changing the password or `logout-all` |
-| Script injection (XSS) via listing titles, URLs or images | Etsy API → web UI | Svelte escapes all output; no scripts at all (server-side rendering only, CSP `script-src 'none'`, `default-src 'none'`); links and images only to Etsy over HTTPS |
+| Script injection (XSS) via listing titles, URLs or images | Etsy API → web UI | Svelte escapes all output; no scripts at all (server-side rendering only, CSP `script-src 'none'`, `default-src 'none'`); links only to Etsy over HTTPS, images only from `i.etsystatic.com` (checked in the page and by the CSP); tests render every page with hostile titles and URLs |
 | Cross-site requests (CSRF), clickjacking | web UI | SvelteKit's origin check for every form; `SameSite=Lax`; `frame-ancestors 'none'` and `X-Frame-Options: DENY` |
 | Redirect to another site after sign-in | web UI | only local paths are accepted as target |
 | Requests for other host names (DNS rebinding, misconfigured proxy) | web UI | rejected with 421 unless the host is `UI_DOMAIN` |

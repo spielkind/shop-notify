@@ -16,7 +16,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import FrameType
-from typing import Any, cast
+from typing import Any, Literal, cast
 from urllib.parse import parse_qs, urlsplit
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
@@ -69,6 +69,26 @@ class EventPage:
 
 
 @dataclass(frozen=True)
+class ListingCounts:
+    """Number of listings per status."""
+
+    listed: int
+    missing: int
+    sold_out: int
+    gone: int
+
+
+@dataclass(frozen=True)
+class ListingPage:
+    listings: list[StoredListing]
+    """The newest (first seen) first."""
+    counts: ListingCounts
+    """Of all listings, whatever the filters."""
+    next: int | None
+    """Pass as ``before`` to get the next page; null on the last page."""
+
+
+@dataclass(frozen=True)
 class ListingDetail:
     listing: StoredListing
     events: list[Event]
@@ -80,7 +100,7 @@ class Error:
     error: str
 
 
-RESPONSES: tuple[type, ...] = (Health, PollPage, EventPage, ListingDetail, Error)
+RESPONSES: tuple[type, ...] = (Health, PollPage, EventPage, ListingPage, ListingDetail, Error)
 _ADAPTERS: dict[type, TypeAdapter[Any]] = {t: TypeAdapter(t) for t in RESPONSES}
 
 
@@ -117,6 +137,15 @@ class _EventQuery(_PageQuery):
     event: str | None = Field(default=None, pattern=r"^[a-z_]+(,[a-z_]+)*$")
     q: str | None = Field(default=None, min_length=1, max_length=200)
     listing_id: int | None = Field(default=None, gt=0)
+
+
+class _ListingQuery(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    status: Literal["listed", "missing", "sold_out", "gone", "all"] = "listed"
+    q: str | None = Field(default=None, min_length=1, max_length=200)
+    before: int | None = Field(default=None, gt=0)
+    limit: int = Field(default=100, ge=1, le=MAX_LIMIT)
 
 
 class _BadRequestError(Exception):
@@ -197,6 +226,20 @@ def _events(db_path: Path, _match: re.Match[str], params: dict[str, str]) -> Pay
     return HTTPStatus.OK, EventPage(events[: query.limit], _next(events, query.limit))
 
 
+def _listings(db_path: Path, _match: re.Match[str], params: dict[str, str]) -> Payload:
+    query = _validate(_ListingQuery, params)
+    with ListingStore(db_path, readonly=True) as store:
+        listings = store.listings(
+            status=None if query.status == "all" else query.status,
+            text=query.q,
+            before=query.before,
+            limit=query.limit + 1,
+        )
+        counts = ListingCounts(**store.listing_counts())
+    last = listings[query.limit - 1].listing.listing_id if len(listings) > query.limit else None
+    return HTTPStatus.OK, ListingPage(listings[: query.limit], counts, last)
+
+
 def _listing(db_path: Path, match: re.Match[str], params: dict[str, str]) -> Payload:
     _no_parameters(params)
     listing_id = int(match["listing_id"])
@@ -219,6 +262,7 @@ _ROUTES = (
     _Route("GET", re.compile(r"/api/health"), _health),
     _Route("GET", re.compile(r"/api/polls"), _polls),
     _Route("GET", re.compile(r"/api/events"), _events),
+    _Route("GET", re.compile(r"/api/listings"), _listings),
     # up to 18 digits, so that the ID fits into an SQLite integer
     _Route("GET", re.compile(r"/api/listings/(?P<listing_id>[1-9][0-9]{0,17})"), _listing),
 )

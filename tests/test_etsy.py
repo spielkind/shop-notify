@@ -6,7 +6,7 @@ import pytest
 import respx
 
 from shop_notify.etsy import EtsyClient, EtsyError, Quota
-from shop_notify.models import Listing
+from shop_notify.models import Listing, ListingImage
 
 BASE = "https://openapi.etsy.com/v3/application/"
 
@@ -142,7 +142,11 @@ def test_listing_images_picks_main_image_in_batches() -> None:
                             "listing_id": 1,
                             "images": [
                                 {"rank": 2, "url_570xN": "https://img/1b.jpg"},
-                                {"rank": 1, "url_570xN": "https://img/1a.jpg"},
+                                {
+                                    "rank": 1,
+                                    "url_570xN": "https://img/1a.jpg",
+                                    "url_170x135": "https://img/1a-s.jpg",
+                                },
                             ],
                         },
                         {"listing_id": 2, "images": []},
@@ -155,7 +159,7 @@ def test_listing_images_picks_main_image_in_batches() -> None:
     with EtsyClient("key", "secret", base_url=BASE) as client:
         images = client.listing_images(list(range(1, 151)))
 
-    assert images == {1: "https://img/1a.jpg"}
+    assert images == {1: ListingImage("https://img/1a.jpg", "https://img/1a-s.jpg")}
     assert route.call_count == 2
     params = route.calls[0].request.url.params
     assert params["includes"] == "Images"
@@ -254,7 +258,7 @@ def test_malformed_image_entries_are_skipped() -> None:
         )
     )
     with EtsyClient("key", "secret", base_url=BASE) as client:
-        assert client.listing_images([1, 2]) == {2: "https://img/2.jpg"}
+        assert client.listing_images([1, 2]) == {2: ListingImage("https://img/2.jpg", None)}
 
 
 @respx.mock

@@ -117,13 +117,34 @@ def resolve_shop_id(client: EtsyClient, settings: Settings) -> int:
     return shop_id
 
 
-def add_images(client: EtsyClient, listings: Sequence[Listing]) -> list[Listing]:
-    """Attach main image URLs; notifications are still sent if this fails."""
+# Images looked up per poll: one request to Etsy
+IMAGES_PER_POLL = 100
+
+
+def refresh_images(client: EtsyClient, store: ListingStore) -> None:
+    """Look up the main image of new and changed listings in the shop.
+
+    Up to ``IMAGES_PER_POLL`` per poll, so that a shop seen for the first time is filled
+    in over a few polls. A failure doesn't stop the poll; it is retried next time.
+    """
+    listing_ids = store.listings_needing_images(IMAGES_PER_POLL)
+    if not listing_ids:
+        return
     try:
-        images = client.listing_images([item.listing_id for item in listings])
+        images = client.listing_images(listing_ids)
     except EtsyError as e:
-        log.warning("Could not load listing images: %s", e)
-        return list(listings)
+        message = str(e)
+        level = logging.DEBUG if message == store.last_image_lookup_error else logging.WARNING
+        log.log(level, "Could not look up listing images: %s", e)
+        store.last_image_lookup_error = message
+        return
+    store.last_image_lookup_error = None
+    store.record_images(listing_ids, images)
+
+
+def add_images(store: ListingStore, listings: Sequence[Listing]) -> list[Listing]:
+    """Attach the stored main images; listings without one are notified without."""
+    images = store.image_urls([item.listing_id for item in listings])
     return [item.model_copy(update={"image_url": images.get(item.listing_id)}) for item in listings]
 
 
@@ -290,6 +311,7 @@ def run_once(
         forget_after=forget_after,
     )
     look_up_states(client, store, result)
+    refresh_images(client, store)
     for item in result.gone:
         log.info("No longer in the shop: %s (%s)", item.title, item.url)
     pending = select_to_notify(store, result, listings, filters)
@@ -306,7 +328,7 @@ def run_once(
             )
             return 0
         if pending:
-            notifier.notify(add_images(client, pending))
+            notifier.notify(add_images(store, pending))
             store.mark_as_notified(pending)
             for item in pending:
                 log.info("%s", describe_notice(item))

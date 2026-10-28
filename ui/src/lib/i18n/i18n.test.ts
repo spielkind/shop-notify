@@ -32,6 +32,9 @@ describe('languages', () => {
 		expect(en.overview.pollOk(124)).toBe('OK – 124 listings in the shop');
 		expect(en.overview.pollIncomplete(3, 5)).toContain('3 of 5 listings');
 		expect(en.listing.title(42)).toBe('Listing 42');
+		expect(en.overview.listingsInShop(1)).toBe('1 listing in the shop');
+		expect(en.overview.listingsInShop(125)).toBe('125 listings in the shop');
+		expect(en.listings.inStock(3)).toBe('3 in stock');
 		expect(en.errors.title(503)).toBe('Error 503');
 		expect(COUNT_KEYS.map((key) => en.count[key](2))).toEqual([
 			'2 new',

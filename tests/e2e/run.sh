@@ -192,6 +192,10 @@ check_api 'events?event=sold_out' '[.events[].listing_id] | index(1006) != null'
 check_api listings/1006 \
   '.listing.status == "listed" and ([.events[].event] | index("restocked") != null)' \
   "restocked listing not shown as listed"
+# the poller looked up the images of the listings in the shop
+check_api listings \
+  '.counts.listed >= 4 and ([.listings[] | select(.image_url == null)] | length) == 0' \
+  "listings without their images"
 [[ $(curl -s -o /dev/null -w '%{http_code}' -X POST "$API/events") == 405 ]] \
   || fail "the API accepted a POST"
 
@@ -248,6 +252,10 @@ ui_flow() {
     || fail "$1: sold-out event not listed"
   curl -skf -b "$jar" "$UI/listings/1006" | grep -q "In the shop" \
     || fail "$1: restocked listing not shown as in the shop"
+  curl -skf -b "$jar" "$UI/listings" > "$page" || fail "$1: listings not shown"
+  grep -q 'class="card"' "$page" && grep -q "Handmade test item 6" "$page" \
+    || fail "$1: no listing cards"
+  grep -q 'aria-current="page">In the shop' "$page" || fail "$1: no status tabs"
   curl -sk -b "$jar" -D - -o /dev/null "$UI/polls" | grep -qi "^content-security-policy: default-src 'none'" \
     || fail "$1: no Content-Security-Policy"
   [[ $(curl -sk -b "$jar" -o /dev/null -w '%{http_code}' -X POST -H "Origin: $UI" "$UI/logout") == 303 ]] \

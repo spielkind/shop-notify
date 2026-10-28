@@ -1,10 +1,11 @@
 """SQLite storage of listings, their history and the polls.
 
-Schema version 3 (see ``docs/architecture.md`` for a diagram):
+Schema version 4 (see ``docs/architecture.md`` for a diagram):
 
 - ``listings``: one row per listing ever seen, with its latest state; rows are kept
   when a listing leaves the shop (``gone_since``). ``pending`` holds the notification
-  waiting to be sent for a listing (the notification queue).
+  waiting to be sent for a listing (the notification queue); ``image_url`` and
+  ``thumbnail_url`` its main image, looked up again when the listing changes.
 - ``listing_events``: append-only history per listing.
 - ``polls``: one row per poll, kept for ``poll_history_days``.
 """
@@ -22,11 +23,11 @@ from pathlib import Path
 from types import TracebackType
 from typing import Any, Self
 
-from shop_notify.models import DEFAULT_EVENTS, EVENTS, Listing, Money, Notice
+from shop_notify.models import DEFAULT_EVENTS, EVENTS, Listing, ListingImage, Money, Notice
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS listings (
@@ -40,7 +41,10 @@ CREATE TABLE IF NOT EXISTS listings (
     notified_price TEXT,
     filtered       INTEGER NOT NULL DEFAULT 0,
     pending        TEXT,
-    result         TEXT NOT NULL
+    result         TEXT NOT NULL,
+    image_url      TEXT,
+    thumbnail_url  TEXT,
+    image_checked  INTEGER
 );
 CREATE TABLE IF NOT EXISTS listing_events (
     id         INTEGER PRIMARY KEY,
@@ -156,6 +160,50 @@ class StoredListing:
     filtered: bool
     pending: str | None
     """The event of a notification waiting to be sent."""
+    image_url: str | None
+    """The main image, 570 pixels wide; None until looked up, or if there is none."""
+    thumbnail_url: str | None
+    """The main image, 170 x 135 pixels."""
+
+
+# Conditions for the status of a listing, see StoredListing.status
+STATUSES = {
+    "listed": "missing_since IS NULL AND gone_since IS NULL",
+    "missing": "missing_since IS NOT NULL AND gone_since IS NULL AND sold_out_since IS NULL",
+    "sold_out": "sold_out_since IS NOT NULL AND gone_since IS NULL",
+    "gone": "gone_since IS NOT NULL",
+}
+
+_STORED_COLUMNS = """
+    result, first_seen, last_seen, missing_since, gone_since, sold_out_since,
+    notified_date, filtered, pending, image_url, thumbnail_url
+"""
+
+
+def _stored(row: Sequence[Any]) -> StoredListing:
+    result, first_seen, last_seen, missing, gone, sold_out, notified, filtered, pending = row[:9]
+    if gone is not None:
+        status = "gone"
+    elif sold_out is not None:
+        status = "sold_out"
+    elif missing is not None:
+        status = "missing"
+    else:
+        status = "listed"
+    return StoredListing(
+        listing=Listing.model_validate_json(result),
+        status=status,
+        first_seen=_ts(first_seen),
+        last_seen=_ts(last_seen),
+        missing_since=_optional_ts(missing),
+        gone_since=_optional_ts(gone),
+        sold_out_since=_optional_ts(sold_out),
+        notified=_optional_ts(notified),
+        filtered=bool(filtered),
+        pending=Notice.model_validate_json(pending).kind if pending else None,
+        image_url=row[9],
+        thumbnail_url=row[10],
+    )
 
 
 def _ts(value: int) -> datetime:
@@ -214,6 +262,8 @@ class ListingStore:
         self.events_settings = events or EventSettings()
         self.last_state_lookup_error: str | None = None
         """The last Etsy state-lookup error, to avoid repeating the warning every poll."""
+        self.last_image_lookup_error: str | None = None
+        """The last Etsy image-lookup error, likewise."""
         self._readonly = readonly
         if readonly:
             self._db = _open_readonly(path)
@@ -294,7 +344,15 @@ class ListingStore:
             self._db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
     def _upgrade(self, version: int) -> None:
-        """Upgrade the tables of schema version 1 or 2."""
+        """Upgrade the tables of schema version 1, 2 or 3."""
+        alter = self._db.execute
+        if version < 3:
+            self._upgrade_to_3(version)
+        # 4: the main image of each listing, and when it was looked up
+        for column in ("image_url TEXT", "thumbnail_url TEXT", "image_checked INTEGER"):
+            alter(f"ALTER TABLE listings ADD COLUMN {column}")
+
+    def _upgrade_to_3(self, version: int) -> None:
         alter = self._db.execute
         if version < 2:
             for table in ("listings", "polls"):
@@ -734,35 +792,99 @@ class ListingStore:
     def listing(self, listing_id: int) -> StoredListing | None:
         """The latest recorded state of a listing, or None if it isn't known."""
         row = self._db.execute(
-            """
-            SELECT result, first_seen, last_seen, missing_since, gone_since, sold_out_since,
-                   notified_date, filtered, pending
-            FROM listings WHERE listing_id = ?
-            """,
+            f"SELECT {_STORED_COLUMNS} FROM listings WHERE listing_id = ?",  # constant
             (listing_id,),
         ).fetchone()
-        if row is None:
-            return None
-        result, first_seen, last_seen, missing, gone, sold_out, notified, filtered, pending = row
-        if gone is not None:
-            status = "gone"
-        elif sold_out is not None:
-            status = "sold_out"
-        elif missing is not None:
-            status = "missing"
-        else:
-            status = "listed"
-        return StoredListing(
-            listing=Listing.model_validate_json(result),
-            status=status,
-            first_seen=_ts(first_seen),
-            last_seen=_ts(last_seen),
-            missing_since=_optional_ts(missing),
-            gone_since=_optional_ts(gone),
-            sold_out_since=_optional_ts(sold_out),
-            notified=_optional_ts(notified),
-            filtered=bool(filtered),
-            pending=Notice.model_validate_json(pending).kind if pending else None,
+        return None if row is None else _stored(row)
+
+    def listings(
+        self,
+        *,
+        status: str | None = None,
+        text: str | None = None,
+        before: int | None = None,
+        limit: int | None = None,
+    ) -> list[StoredListing]:
+        """The listings, the newest (first seen) first.
+
+        ``status`` (a key of ``STATUSES``) and ``text`` (in the title, ignoring the case of
+        ASCII letters) filter them; ``before`` keeps those after the listing with this ID
+        in this order, to page through them ``limit`` at a time.
+        """
+        query = f"SELECT {_STORED_COLUMNS} FROM listings WHERE 1"
+        params: list[Any] = []
+        if status is not None:
+            query += f" AND {STATUSES[status]}"  # only the constant conditions above
+        if text:
+            query += r" AND json_extract(result, '$.title') LIKE ? ESCAPE '\'"
+            params.append(f"%{_escape_like(text)}%")
+        if before is not None:
+            query += (
+                " AND (first_seen, listing_id) <"
+                " (SELECT first_seen, listing_id FROM listings WHERE listing_id = ?)"
+            )
+            params.append(before)
+        query += " ORDER BY first_seen DESC, listing_id DESC"
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(limit)
+        return [_stored(row) for row in self._db.execute(query, params)]
+
+    def listing_counts(self) -> dict[str, int]:
+        """How many listings have each status."""
+        sums = ", ".join(f"COALESCE(SUM({condition}), 0)" for condition in STATUSES.values())
+        row = self._db.execute(f"SELECT {sums} FROM listings").fetchone()  # constant
+        return dict(zip(STATUSES, row, strict=True))
+
+    # -- images ---------------------------------------------------------------
+
+    def listings_needing_images(self, limit: int) -> list[int]:
+        """Listings in the shop whose image wasn't looked up since they last changed."""
+        return [
+            row[0]
+            for row in self._db.execute(
+                f"""
+                SELECT listing_id FROM listings
+                WHERE {STATUSES["listed"]}
+                    AND (image_checked IS NULL
+                        OR image_checked != json_extract(result, '$.last_modified_timestamp'))
+                ORDER BY first_seen DESC, listing_id DESC LIMIT ?
+                """,  # only the constant condition is interpolated
+                (limit,),
+            )
+        ]
+
+    def record_images(self, listing_ids: Iterable[int], images: dict[int, ListingImage]) -> None:
+        """Store the images looked up for ``listing_ids``; those without one have none."""
+        with self._db:
+            for listing_id in listing_ids:
+                image = images.get(listing_id)
+                self._db.execute(
+                    """
+                    UPDATE listings SET image_url = ?, thumbnail_url = ?,
+                        image_checked = json_extract(result, '$.last_modified_timestamp')
+                    WHERE listing_id = ?
+                    """,
+                    (
+                        image.url if image else None,
+                        image.thumbnail_url if image else None,
+                        listing_id,
+                    ),
+                )
+
+    def image_urls(self, listing_ids: Sequence[int]) -> dict[int, str]:
+        """The stored main images (570 pixels wide) of these listings, if any."""
+        if not listing_ids:
+            return {}
+        placeholders = ",".join("?" * len(listing_ids))
+        return dict(
+            self._db.execute(
+                f"""
+                SELECT listing_id, image_url FROM listings
+                WHERE listing_id IN ({placeholders}) AND image_url IS NOT NULL
+                """,  # only placeholders are interpolated
+                listing_ids,
+            ).fetchall()
         )
 
     def seen_since(self, since: float) -> list[Listing]:

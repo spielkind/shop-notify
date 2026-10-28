@@ -8,6 +8,20 @@ notation (e.g. `1.0.0rc1` for `1.0.0-rc.1`).
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-10-28
+
+### Added
+- The web UI shows the listings of the shop as cards with their pictures, by
+  status (in the shop, missing, sold out, gone) and searchable; the overview
+  shows how many listings are in the shop
+- The read-only API serves the listings (`/api/listings`) and the main image of
+  each listing
+
+### Changed
+- Shop Notify looks up and stores the main image of new and changed listings
+  (up to 100 per poll, one request to Etsy) and uses it for the notifications;
+  database schema version 4, upgraded automatically with a backup copy
+
 ## [1.5.0] - 2026-10-28
 
 ### Added
@@ -266,7 +280,8 @@ until it has been verified against the real Etsy API with an approved key.
 
 Original version for the Etsy API v2 (never tagged).
 
-[Unreleased]: https://github.com/spielkind/shop-notify/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/spielkind/shop-notify/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/spielkind/shop-notify/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/spielkind/shop-notify/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/spielkind/shop-notify/compare/v1.3.3...v1.4.0
 [1.3.3]: https://github.com/spielkind/shop-notify/compare/v1.3.2...v1.3.3

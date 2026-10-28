@@ -8,6 +8,7 @@ export const en: Messages = {
 
 	nav: {
 		overview: 'Overview',
+		listings: 'Listings',
 		events: 'Events',
 		polls: 'Polls',
 		logout: 'Sign out',
@@ -34,8 +35,22 @@ export const en: Messages = {
 		pollIncomplete: (received, reported) =>
 			`Incomplete answer from Etsy – ${received} of ${reported} listings`,
 		pollFailed: 'Failed',
+		listingsInShop: (n) => `${plural(n, 'listing', 'listings')} in the shop`,
 		recentEvents: 'Recent events',
 		allEvents: 'All events'
+	},
+
+	listings: {
+		title: 'Listings',
+		status: 'Status',
+		all: 'All',
+		search: 'Title contains',
+		apply: 'Show',
+		none: 'No listings match.',
+		older: 'More listings',
+		newest: 'First listings',
+		inStock: (n) => `${n} in stock`,
+		noImage: 'No image'
 	},
 
 	events: {

@@ -1,4 +1,4 @@
-import type { EventPage, Health, ListingDetail, PollPage } from '../api-types.ts';
+import type { EventPage, Health, ListingDetail, ListingPage, PollPage } from '../api-types.ts';
 
 /** The API answered with an error, or couldn't be reached (status 503). */
 export class ApiError extends Error {
@@ -14,6 +14,13 @@ export interface EventQuery {
 	event?: string;
 	q?: string;
 	listing_id?: number;
+	before?: number;
+	limit?: number;
+}
+
+export interface ListingQuery {
+	status?: 'listed' | 'missing' | 'sold_out' | 'gone' | 'all';
+	q?: string;
 	before?: number;
 	limit?: number;
 }
@@ -86,6 +93,10 @@ export class Api {
 
 	events(query: EventQuery = {}): Promise<EventPage> {
 		return this.#get('/api/events', query);
+	}
+
+	listings(query: ListingQuery = {}): Promise<ListingPage> {
+		return this.#get('/api/listings', query);
 	}
 
 	listing(id: number): Promise<ListingDetail> {

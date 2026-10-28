@@ -1,6 +1,6 @@
 # Read-only API
 
-`shop-notify api` serves the recorded history as JSON: the polls, the events of all listings and the state of a single listing. It's meant for tools that show the history – like the [web UI](web-ui.md) – and works as an alternative to `shop-notify history`.
+`shop-notify api` serves the recorded history as JSON: the polls, the events of all listings, the listings with their state and images, and a single listing with its history. It's meant for tools that show the history – like the [web UI](web-ui.md) – and works as an alternative to `shop-notify history`.
 
 - **Read-only:** the API runs as its own process next to the poller and opens the database read-only for every request. It never changes the database, and only `GET` requests are answered.
 - **No credentials:** it only needs the database – not the Etsy API key or the notification targets.
@@ -44,7 +44,7 @@ All responses are JSON. Times are UTC in ISO 8601 (`2026-10-26T11:54:15Z`); a `s
 Whether the database can be read, and the last poll:
 
 ```json
-{"status": "ok", "version": "1.4.0", "schema_version": 3,
+{"status": "ok", "version": "1.6.0", "schema_version": 4,
  "last_poll": {"id": 4711, "time": "2026-10-26T11:54:15Z", "reported": 124, "received": 124,
                "complete": true, "new": 0, "back": 0, "missing": 0, "gone": 0, "filtered": 0,
                "restocked": 0, "sold_out": 0, "error": null},
@@ -74,6 +74,16 @@ The [events](events.md) of all listings, newest first: `{"events": [...], "next"
 | `listing_id` | Only this listing |
 | `since`, `limit`, `before` | As for `/api/polls` |
 
+### `GET /api/listings`
+
+The listings, the newest (first seen) first, with the number of listings per status: `{"listings": [...], "counts": {"listed": 125, "missing": 0, "sold_out": 3, "gone": 2}, "next": 1550875589}`. Each listing is like `listing` below.
+
+| Parameter | Meaning |
+|---|---|
+| `status` | `listed` (in the shop, the default), `missing`, `sold_out`, `gone` or `all` |
+| `q` | Only listings whose title contains this text (ignoring the case of ASCII letters) |
+| `limit`, `before` | As for `/api/polls`; `before` is a listing ID |
+
 ### `GET /api/listings/{id}`
 
 A listing with its latest state and all its events, newest first:
@@ -82,11 +92,13 @@ A listing with its latest state and all its events, newest first:
 {"listing": {"listing": {"listing_id": 1550875589, "title": "…", "url": "…", "price": {"amount": 2500, "divisor": 100, "currency_code": "EUR"}, …},
              "status": "sold_out", "first_seen": "…", "last_seen": "…",
              "missing_since": "…", "gone_since": null, "sold_out_since": "…",
-             "notified": "…", "filtered": false, "pending": null},
+             "notified": "…", "filtered": false, "pending": null,
+             "image_url": "https://i.etsystatic.com/…/il_570xN….jpg",
+             "thumbnail_url": "https://i.etsystatic.com/…/il_170x135….jpg"},
  "events": [...]}
 ```
 
-`status` is `listed`, `missing`, `sold_out` or `gone`. `notified` is when the listing was last notified – or filtered out, if `filtered` is set. `pending` is the event of a notification waiting to be sent. `404` if the listing is unknown.
+`status` is `listed`, `missing`, `sold_out` or `gone`. `image_url` (570 pixels wide) and `thumbnail_url` (170 × 135) are the main image on Etsy's servers – `null` until the poller has looked it up, or if the listing has none. `notified` is when the listing was last notified – or filtered out, if `filtered` is set. `pending` is the event of a notification waiting to be sent. `404` if the listing is unknown.
 
 ### Paging
 

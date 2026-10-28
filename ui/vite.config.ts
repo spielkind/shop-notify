@@ -31,8 +31,12 @@ export default defineConfig({
 		include: ['src/**/*.test.ts'],
 		coverage: {
 			provider: 'v8',
-			include: ['src/lib/**/*.ts'],
-			exclude: ['src/lib/api-types.ts'],
+			include: [
+				'src/lib/**/*.{ts,svelte}',
+				'src/hooks.server.ts',
+				'src/routes/**/*.{ts,svelte}'
+			],
+			exclude: ['src/lib/api-types.ts', 'src/tests/**'],
 			thresholds: { 100: true }
 		}
 	}

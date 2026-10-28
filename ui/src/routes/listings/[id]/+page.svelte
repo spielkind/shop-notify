@@ -30,8 +30,8 @@
 </svelte:head>
 
 <article class="listing">
-	{#if safeUrl(listing.image_url)}
-		<img src={safeUrl(listing.image_url)} alt="" referrerpolicy="no-referrer" />
+	{#if safeUrl(item.image_url)}
+		<img src={safeUrl(item.image_url)} alt="" referrerpolicy="no-referrer" />
 	{/if}
 	<div>
 		<p class="muted">{f.t.listing.title(listing.listing_id)}</p>

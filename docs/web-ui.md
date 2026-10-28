@@ -1,10 +1,11 @@
 # Web UI
 
-A small web interface for the history that Shop Notify records: the last poll at a glance, the events of all listings with filters, the polls, and every listing with its state and history. It only shows data – changing filters or settings is not part of it yet.
+A small web interface for the history that Shop Notify records: the last poll at a glance, the listings of the shop with their pictures, the events of all listings with filters, the polls, and every listing with its state and history. It only shows data – changing filters or settings is not part of it yet.
 
 - **Optional:** the poller and the command line work as before without it.
 - **Signed in only:** one or more accounts, managed on the server with `shop-notify-ui`.
 - **No scripts:** the pages are rendered on the server and contain no JavaScript; the Content-Security-Policy forbids scripts altogether.
+- **Pictures from Etsy:** the browser loads the listing pictures directly from Etsy's image servers (`i.etsystatic.com`, without a referrer) – the only other site the pages contact. The poller looks up the picture of new and changed listings; for a shop it sees for the first time, they appear within a few polls.
 - **Separated:** the UI runs in its own container and reads the history through the [read-only API](api.md), which only it can reach; it never opens the poller's database. Accounts and sessions are kept in the UI's own database.
 
 ```

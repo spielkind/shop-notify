@@ -32,3 +32,8 @@ export function resetContext(): void {
 	context?.db.close();
 	context = undefined;
 }
+
+/** For tests: use this context instead of one from the environment. */
+export function useContext(test: Context): void {
+	context = test;
+}

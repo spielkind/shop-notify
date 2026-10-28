@@ -9,6 +9,7 @@
 	const f = $derived(localize(data));
 	const links = $derived([
 		{ href: resolve('/'), label: f.t.nav.overview },
+		{ href: resolve('/listings'), label: f.t.nav.listings },
 		{ href: resolve('/events'), label: f.t.nav.events },
 		{ href: resolve('/polls'), label: f.t.nav.polls }
 	]);
