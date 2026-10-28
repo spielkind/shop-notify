@@ -2,7 +2,7 @@ import email
 import logging
 import signal
 import time
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Any, ClassVar
@@ -74,25 +74,6 @@ class RecordingNotifier:
         self.calls.append([item.listing_id for item in listings])
         self.initial.append(initial)
         self.images.append([item.image_url for item in listings])
-
-
-@pytest.fixture
-def restore_signals() -> Iterator[None]:
-    saved = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)}
-    yield
-    for sig, handler in saved.items():
-        signal.signal(sig, handler)
-
-
-@pytest.fixture
-def restore_logging() -> Iterator[None]:
-    root = logging.getLogger()
-    handlers, level = root.handlers[:], root.level
-    yield
-    for handler in root.handlers:
-        if handler not in handlers:
-            handler.close()
-    root.handlers, root.level = handlers, level
 
 
 def test_build_notifier_console() -> None:

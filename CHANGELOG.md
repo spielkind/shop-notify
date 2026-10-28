@@ -8,6 +8,19 @@ notation (e.g. `1.0.0rc1` for `1.0.0-rc.1`).
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-28
+
+### Added
+- Read-only JSON API of the history: `shop-notify api` serves the polls, the
+  events of all listings (filtered and in pages) and the state of a single
+  listing; disabled by default, and in Docker an optional second container
+  (`docker compose --profile api up -d`) – see `docs/api.md`
+
+### Changed
+- The database uses SQLite's write-ahead log, so that the API can read while
+  Shop Notify writes; while it runs, `shop-notify.db-wal` and `-shm` lie next to
+  the database. Stop Shop Notify before copying the database
+
 ## [1.3.3] - 2026-10-25
 
 ### Fixed
@@ -238,7 +251,8 @@ until it has been verified against the real Etsy API with an approved key.
 
 Original version for the Etsy API v2 (never tagged).
 
-[Unreleased]: https://github.com/spielkind/shop-notify/compare/v1.3.3...HEAD
+[Unreleased]: https://github.com/spielkind/shop-notify/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/spielkind/shop-notify/compare/v1.3.3...v1.4.0
 [1.3.3]: https://github.com/spielkind/shop-notify/compare/v1.3.2...v1.3.3
 [1.3.2]: https://github.com/spielkind/shop-notify/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/spielkind/shop-notify/compare/v1.3.0...v1.3.1

@@ -10,8 +10,8 @@ from decimal import Decimal
 from types import FrameType
 from typing import TypedDict
 
-from shop_notify import __version__
-from shop_notify.config import NotifySettings, Settings
+from shop_notify import __version__, api
+from shop_notify.config import ApiSettings, NotifySettings, Settings
 from shop_notify.db import ListingStore, SyncResult
 from shop_notify.etsy import EtsyClient, EtsyError
 from shop_notify.filters import FilterError, Filters
@@ -636,6 +636,7 @@ COMMANDS = {
     "test-notify": "send a sample notification to all targets",
     "history": "show the recorded history of the listings",
     "check-filters": "show which titles the configured filters let through",
+    "api": "serve the read-only JSON API of the history (see docs/api.md)",
 }
 
 
@@ -702,6 +703,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         if (args.argument is None) == (args.since is None):
             parser.error("check-filters needs either a title or --since")
         raise SystemExit(check_filters(NotifySettings(), args.argument, args.price, args.since))
+    if command == "api":
+        raise SystemExit(api.serve(ApiSettings()))
     settings = Settings()
     if command == "healthcheck":
         raise SystemExit(healthcheck(settings))
