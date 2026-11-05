@@ -12,8 +12,12 @@ RUN npx svelte-kit sync && npm run build
 
 FROM node:26.11-trixie-slim@sha256:193fe51b64e77981119c98c2002c9e32a70e2f006fb4d25068ce0558998917f0
 
+# Debian security updates not yet in the base image.
 # npm and corepack are not needed at runtime: the app is bundled and has no dependencies
-RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+RUN apt-get update \
+    && apt-get upgrade --yes --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
         /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
     && mkdir /data && chown node:node /data \
     && printf '#!/bin/sh\nexec node /app/src/lib/server/cli.ts "$@"\n' > /usr/local/bin/shop-notify-ui \
