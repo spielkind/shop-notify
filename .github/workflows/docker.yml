@@ -63,11 +63,17 @@ jobs:
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
+      # Changes daily, so the cached apt layer is rebuilt with the latest Debian
+      # security updates
+      - name: Daily apt refresh
+        run: echo "APT_REFRESH=$(date -u +%F)" >> "$GITHUB_ENV"
+
       - name: Build for smoke test
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           platforms: ${{ matrix.platform }}
+          build-args: APT_REFRESH=${{ env.APT_REFRESH }}
           tags: shop-notify:ci
           load: true
           cache-from: type=gha,scope=${{ matrix.platform }}
@@ -77,6 +83,7 @@ jobs:
         with:
           context: ui
           platforms: ${{ matrix.platform }}
+          build-args: APT_REFRESH=${{ env.APT_REFRESH }}
           tags: shop-notify-ui:ci
           load: true
           cache-from: type=gha,scope=ui-${{ matrix.platform }}
@@ -212,6 +219,7 @@ jobs:
         with:
           context: .
           platforms: ${{ matrix.platform }}
+          build-args: APT_REFRESH=${{ env.APT_REFRESH }}
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
@@ -226,6 +234,7 @@ jobs:
         with:
           context: ui
           platforms: ${{ matrix.platform }}
+          build-args: APT_REFRESH=${{ env.APT_REFRESH }}
           labels: ${{ steps.meta-ui.outputs.labels }}
           annotations: ${{ steps.meta-ui.outputs.annotations }}
           outputs: type=image,name=${{ env.UI_IMAGE }},push-by-digest=true,name-canonical=true,push=true
