@@ -164,7 +164,7 @@ echo "5. a new listing appears and then sells out while the state lookup is fail
 curl -sf -X POST "http://localhost:$ETSY_PORT/_add" >/dev/null
 wait_for 60 three_mails || fail "no mail for the new listing before it sells out"
 curl -sf -X POST "http://localhost:$ETSY_PORT/_fail_batch_for/25" >/dev/null
-curl -sf -X POST "http://localhost:$ETSY_PORT/_sell_out_for/120" >/dev/null
+curl -sf -X POST "http://localhost:$ETSY_PORT/_sell_out_for/60" >/dev/null
 lookup_failed() { log_has "Could not look up the state of missing listings"; }
 wait_for 30 lookup_failed || fail "failed state lookup not logged"
 sold_out_logged() { log_has "Listing 1006 is no longer listed: sold out"; }

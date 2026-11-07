@@ -30,7 +30,37 @@ env:
   SCHEDULED: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
 
 jobs:
+  # Pull requests that don't touch the images (docs, CI of other workflows, …) skip the
+  # image jobs; "docker" below then reports success for the required check
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      images: ${{ steps.diff.outputs.images }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: diff
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" != pull_request ]]; then
+            echo "images=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --name-only "$BASE...HEAD" | grep -qE \
+            '^(Dockerfile|\.dockerignore|pyproject\.toml|uv\.lock|README\.md|src/|ui/|tests/e2e/|scripts/|compose\.yaml|Caddyfile|docs/web-ui\.md|\.github/workflows/docker\.yml)'; then
+            echo "images=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "images=false" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
+    needs: changes
+    if: needs.changes.outputs.images == 'true'
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -111,41 +141,12 @@ jobs:
             exit 1
           fi
 
-      # Images against a fake Etsy API and Mailpit: silent first run, one mail per new
-      # listing, no duplicates; the API, and the web UI behind Caddy, nginx and Apache
-      - name: End-to-end test
-        if: matrix.platform == 'linux/amd64'
-        run: tests/e2e/run.sh shop-notify:ci shop-notify-ui:ci
-
       # Fixable critical/high/medium vulnerabilities in OS packages and Python libraries
       # are reported to code scanning and the job summary; critical/high ones fail the
-      # build afterwards – except for scheduled runs, which only report them
+      # build afterwards – except for scheduled runs, which only report them. Each image
+      # is scanned once; the SARIF report is converted from the JSON result.
       - name: Vulnerability scan
         if: matrix.platform == 'linux/amd64'
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: shop-notify:ci
-          severity: CRITICAL,HIGH,MEDIUM
-          ignore-unfixed: true
-          format: sarif
-          limit-severities-for-sarif: true
-          output: trivy.sarif
-          exit-code: "0"
-      - name: Label scan results
-        if: always() && matrix.platform == 'linux/amd64' && hashFiles('trivy.sarif') != ''
-        env:
-          TOOL: ${{ github.event_name == 'pull_request' && 'Trivy (pull request)' || startsWith(github.ref, 'refs/tags/') && 'Trivy (release build)' || 'Trivy (main)' }}
-          REF: ${{ github.ref_name }}
-          SHA: ${{ github.sha }}
-        run: scripts/sarif-label.sh trivy.sarif "$TOOL" "image built from $REF (${SHA:0:7})"
-      - name: Upload scan results to GitHub code scanning
-        if: always() && matrix.platform == 'linux/amd64' && hashFiles('trivy.sarif') != ''
-        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
-        with:
-          sarif_file: trivy.sarif
-          category: trivy-image
-      - name: Scan summary
-        if: always() && matrix.platform == 'linux/amd64'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: shop-notify:ci
@@ -154,36 +155,8 @@ jobs:
           format: json
           output: trivy.json
           exit-code: "0"
-      - name: Write scan summary
-        if: always() && matrix.platform == 'linux/amd64'
-        run: scripts/trivy-summary.sh "image built from this commit" trivy.json
-
       - name: Vulnerability scan of the web UI
         if: matrix.platform == 'linux/amd64'
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: shop-notify-ui:ci
-          severity: CRITICAL,HIGH,MEDIUM
-          ignore-unfixed: true
-          format: sarif
-          limit-severities-for-sarif: true
-          output: trivy-ui.sarif
-          exit-code: "0"
-      - name: Label scan results of the web UI
-        if: always() && matrix.platform == 'linux/amd64' && hashFiles('trivy-ui.sarif') != ''
-        env:
-          TOOL: ${{ github.event_name == 'pull_request' && 'Trivy UI (pull request)' || startsWith(github.ref, 'refs/tags/') && 'Trivy UI (release build)' || 'Trivy UI (main)' }}
-          REF: ${{ github.ref_name }}
-          SHA: ${{ github.sha }}
-        run: scripts/sarif-label.sh trivy-ui.sarif "$TOOL" "web UI image built from $REF (${SHA:0:7})"
-      - name: Upload scan results of the web UI to GitHub code scanning
-        if: always() && matrix.platform == 'linux/amd64' && hashFiles('trivy-ui.sarif') != ''
-        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
-        with:
-          sarif_file: trivy-ui.sarif
-          category: trivy-ui-image
-      - name: Scan summary of the web UI
-        if: always() && matrix.platform == 'linux/amd64'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: shop-notify-ui:ci
@@ -192,9 +165,33 @@ jobs:
           format: json
           output: trivy-ui.json
           exit-code: "0"
-      - name: Write scan summary of the web UI
-        if: always() && matrix.platform == 'linux/amd64'
-        run: scripts/trivy-summary.sh "web UI image built from this commit" trivy-ui.json
+          skip-setup-trivy: true
+      - name: Convert and label scan results
+        if: always() && matrix.platform == 'linux/amd64' && hashFiles('trivy.json', 'trivy-ui.json') != ''
+        env:
+          TOOL: ${{ github.event_name == 'pull_request' && 'Trivy (pull request)' || startsWith(github.ref, 'refs/tags/') && 'Trivy (release build)' || 'Trivy (main)' }}
+          TOOL_UI: ${{ github.event_name == 'pull_request' && 'Trivy UI (pull request)' || startsWith(github.ref, 'refs/tags/') && 'Trivy UI (release build)' || 'Trivy UI (main)' }}
+          REF: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          trivy convert --format sarif --severity CRITICAL,HIGH,MEDIUM --output trivy.sarif trivy.json
+          trivy convert --format sarif --severity CRITICAL,HIGH,MEDIUM --output trivy-ui.sarif trivy-ui.json
+          scripts/sarif-label.sh trivy.sarif "$TOOL" "image built from $REF (${SHA:0:7})"
+          scripts/sarif-label.sh trivy-ui.sarif "$TOOL_UI" "web UI image built from $REF (${SHA:0:7})"
+          scripts/trivy-summary.sh "image built from this commit" trivy.json
+          scripts/trivy-summary.sh "web UI image built from this commit" trivy-ui.json
+      - name: Upload scan results to GitHub code scanning
+        if: always() && matrix.platform == 'linux/amd64' && hashFiles('trivy.sarif') != ''
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: trivy.sarif
+          category: trivy-image
+      - name: Upload scan results of the web UI to GitHub code scanning
+        if: always() && matrix.platform == 'linux/amd64' && hashFiles('trivy-ui.sarif') != ''
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: trivy-ui.sarif
+          category: trivy-ui-image
 
       - name: Fail on critical/high vulnerabilities
         if: matrix.platform == 'linux/amd64' && env.SCHEDULED != 'true'
@@ -270,9 +267,58 @@ jobs:
     env:
       PLATFORM: ${{ matrix.platform }}
 
+  # Images against a fake Etsy API and Mailpit: silent first run, one mail per new
+  # listing, no duplicates; the API, and the web UI behind Caddy, nginx and Apache.
+  # Runs next to the build job and takes its layers from the build cache.
+  e2e:
+    needs: changes
+    if: needs.changes.outputs.images == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Daily apt refresh
+        run: echo "APT_REFRESH=$(date -u +%F)" >> "$GITHUB_ENV"
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          build-args: APT_REFRESH=${{ env.APT_REFRESH }}
+          tags: shop-notify:ci
+          load: true
+          cache-from: type=gha,scope=linux/amd64
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ui
+          platforms: linux/amd64
+          build-args: APT_REFRESH=${{ env.APT_REFRESH }}
+          tags: shop-notify-ui:ci
+          load: true
+          cache-from: type=gha,scope=ui-linux/amd64
+      - name: End-to-end test
+        run: tests/e2e/run.sh shop-notify:ci shop-notify-ui:ci
+
+  # The single required check for this workflow: green if the image jobs passed or were
+  # skipped because the pull request doesn't touch the images
+  docker:
+    if: always()
+    needs: [changes, build, e2e]
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "$RESULTS"
+          [[ " $RESULTS " != *" failure "* && " $RESULTS " != *" cancelled "* ]]
+
   merge:
     if: github.event_name != 'pull_request'
-    needs: build
+    needs: [build, e2e]
     runs-on: ubuntu-latest
     strategy:
       matrix:
