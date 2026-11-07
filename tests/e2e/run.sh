@@ -21,7 +21,7 @@
 #   9-11. the UI behind Caddy (the Caddyfile of the repository), nginx and Apache (the
 #      examples of docs/web-ui.md): sign in, the pages show the history, sign out
 #
-# The ports (18080-18088, 18443, 13000) don't clash with a real installation on the host.
+# The ports (18080-18090, 18443-18445, 13000) don't clash with a real installation on the host.
 #
 # Usage: tests/e2e/run.sh [IMAGE] [UI_IMAGE]
 #   (default: shop-notify:ci shop-notify-ui:ci; needs docker, curl, jq, openssl, python3)
@@ -57,10 +57,13 @@ cleanup() {
     docker logs shop-notify-e2e-api 2>&1 | tail -20 || true
     echo "--- UI log ---"
     docker logs shop-notify-e2e-ui 2>&1 | tail -20 || true
-    echo "--- proxy log ---"
-    docker logs shop-notify-e2e-proxy 2>&1 | tail -20 || true
+    for proxy in Caddy nginx Apache; do
+      echo "--- $proxy log ---"
+      docker logs "shop-notify-e2e-proxy-$proxy" 2>&1 | tail -20 || true
+    done
   fi
-  docker rm -f shop-notify-e2e shop-notify-e2e-api shop-notify-e2e-ui shop-notify-e2e-proxy \
+  docker rm -f shop-notify-e2e shop-notify-e2e-api shop-notify-e2e-ui \
+    shop-notify-e2e-proxy-Caddy shop-notify-e2e-proxy-nginx shop-notify-e2e-proxy-Apache \
     mailpit-e2e >/dev/null 2>&1 || true
   [[ -n "${WORK:-}" ]] && rm -rf "$WORK"
   [[ -n "${MAIL:-}" ]] && rm -f "$MAIL"
@@ -234,11 +237,10 @@ example() {
     -e 's/(proxy_set_header Host )\$host;/\1$http_host;/'
 }
 
-UI=https://localhost:$HTTPS_PORT
-# ui_flow PROXY – sign in through the proxy, read the pages, sign out
+# ui_flow PROXY – sign in through the proxy, read the pages, sign out (HTTPS_PORT is
+# set by run_proxy)
 ui_flow() {
-  local jar="$WORK/cookies" page="$WORK/page.html"
-  rm -f "$jar"
+  local UI=https://localhost:$HTTPS_PORT jar="$WORK/cookies-$1" page="$WORK/page-$1.html"
   wait_for 30 curl -skf "$UI/healthz" || fail "$1: UI not reachable"
   [[ $(curl -sk -o /dev/null -w '%{http_code} %{redirect_url}' "$UI/events") \
     == "303 $UI/login?redirectTo=%2Fevents" ]] || fail "$1: not redirected to the login page"
@@ -267,36 +269,63 @@ ui_flow() {
     || fail "$1: sign-out failed"
   [[ $(curl -sk -b "$jar" -o /dev/null -w '%{http_code}' "$UI/") == 303 ]] \
     || fail "$1: still signed in after signing out"
-  docker rm -f shop-notify-e2e-proxy >/dev/null
 }
 
-echo "9. the web UI behind Caddy"
-docker run -d --name shop-notify-e2e-proxy --network host --read-only --tmpfs /data --tmpfs /config \
-  --cap-drop ALL --cap-add NET_BIND_SERVICE --security-opt no-new-privileges \
-  -e UI_DOMAIN=localhost -e UI_UPSTREAM="127.0.0.1:$UI_PORT" \
-  -e HTTP_PORT="$HTTP_PORT" -e HTTPS_PORT="$HTTPS_PORT" \
-  -e ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory \
-  -v "$ROOT/Caddyfile:/etc/caddy/Caddyfile:ro" "$CADDY" >/dev/null
-ui_flow Caddy
+# Each proxy runs in the background with its own ports and container; they only read
+# the history, so they can be tested at the same time.
+# run_proxy NAME HTTP_PORT HTTPS_PORT START_FUNCTION
+run_proxy() {
+  (
+    HTTP_PORT=$2 HTTPS_PORT=$3 PROXY=shop-notify-e2e-proxy-$1
+    "$4"
+    ui_flow "$1"
+  ) >"$WORK/$1.log" 2>&1
+}
 
-echo "10. the web UI behind nginx"
-example nginx > "$WORK/nginx.conf"
-docker run -d --name shop-notify-e2e-proxy --network host \
-  -v "$WORK/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
-  -v "$WORK/certs:/etc/letsencrypt/live/localhost:ro" "$NGINX" >/dev/null
-ui_flow nginx
+start_caddy() {
+  docker run -d --name "$PROXY" --network host --read-only --tmpfs /data --tmpfs /config \
+    --cap-drop ALL --cap-add NET_BIND_SERVICE --security-opt no-new-privileges \
+    -e UI_DOMAIN=localhost -e UI_UPSTREAM="127.0.0.1:$UI_PORT" \
+    -e HTTP_PORT="$HTTP_PORT" -e HTTPS_PORT="$HTTPS_PORT" \
+    -e ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory \
+    -v "$ROOT/Caddyfile:/etc/caddy/Caddyfile:ro" "$CADDY" >/dev/null
+}
 
-echo "11. the web UI behind Apache"
-example apache > "$WORK/shop-notify.conf"
-# what a2enmod does on Debian, for the official image
-docker run --rm "$HTTPD" cat /usr/local/apache2/conf/httpd.conf \
-  | sed -E -e 's/^#(LoadModule (ssl|socache_shmcb|proxy|proxy_http|headers)_module )/\1/' \
-    -e "s/^Listen 80\$/Listen $HTTP_PORT/" > "$WORK/httpd.conf"
-printf 'Listen %s\nInclude conf/extra/shop-notify.conf\n' "$HTTPS_PORT" >> "$WORK/httpd.conf"
-docker run -d --name shop-notify-e2e-proxy --network host \
-  -v "$WORK/httpd.conf:/usr/local/apache2/conf/httpd.conf:ro" \
-  -v "$WORK/shop-notify.conf:/usr/local/apache2/conf/extra/shop-notify.conf:ro" \
-  -v "$WORK/certs:/etc/letsencrypt/live/localhost:ro" "$HTTPD" >/dev/null
-ui_flow Apache
+start_nginx() {
+  example nginx > "$WORK/nginx.conf"
+  docker run -d --name "$PROXY" --network host \
+    -v "$WORK/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
+    -v "$WORK/certs:/etc/letsencrypt/live/localhost:ro" "$NGINX" >/dev/null
+}
+
+start_apache() {
+  example apache > "$WORK/shop-notify.conf"
+  # what a2enmod does on Debian, for the official image
+  docker run --rm "$HTTPD" cat /usr/local/apache2/conf/httpd.conf \
+    | sed -E -e 's/^#(LoadModule (ssl|socache_shmcb|proxy|proxy_http|headers)_module )/\1/' \
+      -e "s/^Listen 80\$/Listen $HTTP_PORT/" > "$WORK/httpd.conf"
+  printf 'Listen %s\nInclude conf/extra/shop-notify.conf\n' "$HTTPS_PORT" >> "$WORK/httpd.conf"
+  docker run -d --name "$PROXY" --network host \
+    -v "$WORK/httpd.conf:/usr/local/apache2/conf/httpd.conf:ro" \
+    -v "$WORK/shop-notify.conf:/usr/local/apache2/conf/extra/shop-notify.conf:ro" \
+    -v "$WORK/certs:/etc/letsencrypt/live/localhost:ro" "$HTTPD" >/dev/null
+}
+
+echo "9-11. the web UI behind Caddy, nginx and Apache"
+run_proxy Caddy "$HTTP_PORT" "$HTTPS_PORT" start_caddy & caddy_pid=$!
+run_proxy nginx $((HTTP_PORT + 1)) $((HTTPS_PORT + 1)) start_nginx & nginx_pid=$!
+run_proxy Apache $((HTTP_PORT + 2)) $((HTTPS_PORT + 2)) start_apache & apache_pid=$!
+failed=()
+for proxy in Caddy:$caddy_pid nginx:$nginx_pid Apache:$apache_pid; do
+  pid=${proxy#*:} proxy=${proxy%:*}
+  if wait "$pid"; then
+    echo "   $proxy: ok"
+  else
+    echo "   $proxy: failed"
+    sed 's/^/     /' "$WORK/$proxy.log"
+    failed+=("$proxy")
+  fi
+done
+((${#failed[@]} == 0)) || fail "web UI behind ${failed[*]}"
 
 echo "OK"

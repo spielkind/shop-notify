@@ -269,7 +269,8 @@ jobs:
 
   # Images against a fake Etsy API and Mailpit: silent first run, one mail per new
   # listing, no duplicates; the API, and the web UI behind Caddy, nginx and Apache.
-  # Runs next to the build job and takes its layers from the build cache.
+  # Runs next to the build job and shares its build cache; whichever job builds a
+  # changed layer first stores it for the other and the next runs.
   e2e:
     needs: changes
     if: needs.changes.outputs.images == 'true'
@@ -291,6 +292,7 @@ jobs:
           tags: shop-notify:ci
           load: true
           cache-from: type=gha,scope=linux/amd64
+          cache-to: type=gha,mode=max,scope=linux/amd64
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ui
@@ -299,6 +301,7 @@ jobs:
           tags: shop-notify-ui:ci
           load: true
           cache-from: type=gha,scope=ui-linux/amd64
+          cache-to: type=gha,mode=max,scope=ui-linux/amd64
       - name: End-to-end test
         run: tests/e2e/run.sh shop-notify:ci shop-notify-ui:ci
 
