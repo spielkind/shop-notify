@@ -1,13 +1,17 @@
 version: 2
 updates:
   # New versions are only proposed after a cooldown of 7 days (supply-chain safety).
-  # Python dependencies: one grouped pull request per week; major updates separately
+  # Python dependencies: one grouped pull request per week; major updates separately.
+  # Transitive dependencies are included, otherwise fixes for them (e.g. oauthlib via
+  # apprise) never reach uv.lock and the audit blocks every pull request.
   - package-ecosystem: uv
     directory: /
     schedule:
       interval: weekly
     cooldown:
       default-days: 7
+    allow:
+      - dependency-type: all
     groups:
       python:
         update-types: [minor, patch]
