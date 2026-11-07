@@ -12,8 +12,10 @@ RUN npx svelte-kit sync && npm run build
 
 FROM node:26.11-trixie-slim@sha256:193fe51b64e77981119c98c2002c9e32a70e2f006fb4d25068ce0558998917f0
 
-# Debian security updates not yet in the base image.
+# Debian security updates not yet in the base image. APT_REFRESH changes daily in CI, so
+# the build cache never keeps an outdated layer.
 # npm and corepack are not needed at runtime: the app is bundled and has no dependencies
+ARG APT_REFRESH
 RUN apt-get update \
     && apt-get upgrade --yes --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \

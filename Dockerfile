@@ -23,10 +23,14 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 FROM python:3.15-slim-trixie@sha256:e97b88e416c3c01eb427b21fd8cd3ebf006e6ee38afcfcc3cae1c54ee2ab0a75
 
-# Time zone data, so that TZ (e.g. Europe/Berlin) applies to notifications and logs.
+# Debian security updates not yet in the base image, and time zone data, so that TZ
+# (e.g. Europe/Berlin) applies to notifications and logs. APT_REFRESH changes daily in
+# CI, so the build cache never keeps an outdated layer.
 # pip is not needed at runtime (the app runs from its own venv) and only brings
 # outdated vendored copies of certifi, urllib3 etc. into the image.
+ARG APT_REFRESH
 RUN apt-get update \
+    && apt-get upgrade --yes --no-install-recommends \
     && apt-get install --yes --no-install-recommends tzdata \
     && rm -rf /var/lib/apt/lists/* \
     && python -m pip uninstall --yes --quiet pip \
