@@ -8,6 +8,16 @@ notation (e.g. `1.0.0rc1` for `1.0.0-rc.1`).
 
 ## [Unreleased]
 
+## [1.8.1] - 2026-11-17
+
+### Security
+- `oauthlib` 4.0.1 (CVE-2026-49272)
+- Docker images with a patched Debian `apt` (CVE-2026-109518)
+- Web UI build tools: `minimatch` 11 (GHSA-g3hv-75wg-m249)
+
+### Changed
+- Updated dependencies, base images (Node 26.12, Caddy 2.11.8) and GitHub Actions
+
 ## [1.8.0] - 2026-10-28
 
 ### Added
@@ -313,7 +323,8 @@ until it has been verified against the real Etsy API with an approved key.
 
 Original version for the Etsy API v2 (never tagged).
 
-[Unreleased]: https://github.com/spielkind/shop-notify/compare/v1.8.0...HEAD
+[Unreleased]: https://github.com/spielkind/shop-notify/compare/v1.8.1...HEAD
+[1.8.1]: https://github.com/spielkind/shop-notify/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/spielkind/shop-notify/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/spielkind/shop-notify/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/spielkind/shop-notify/compare/v1.5.0...v1.6.0
