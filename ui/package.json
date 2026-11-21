@@ -27,7 +27,7 @@
 		"@sveltejs/vite-plugin-svelte": "^7.3.1",
 		"@types/node": "^26.6.6",
 		"@vitest/coverage-v8": "^5.0.5",
-		"eslint": "^10.14.0",
+		"eslint": "^10.15.0",
 		"eslint-config-prettier": "^10.1.8",
 		"eslint-plugin-svelte": "^3.24.1",
 		"globals": "^17.14.0",
@@ -37,7 +37,7 @@
 		"svelte": "^5.57.1",
 		"svelte-check": "^4.7.8",
 		"typescript": "^6.0.3",
-		"typescript-eslint": "^8.60.1",
+		"typescript-eslint": "^8.72.2",
 		"vite": "^8.3.6",
 		"vitest": "^5.1.0"
 	},
